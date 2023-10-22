@@ -1,9 +1,16 @@
 {
+    "omdb_api_key": "YOUR_API_KEY",
     "notion_api_key": "PUT_YOUR_API_KEY_HERE",
     "notion_media": {
         "movies": {
             "movie_db": "PUT_YOUR_MOVIE_DB_ID_HERE",
             "genre_db": "PUT_YOUR_GENRE_DB_ID_HERE"
         }
+    },
+    "local_media": {
+        "movies": [
+            {"label": "LOCATION_1", "path": "/path/to/location"},
+            {"label": "LOCATION_2", "path": "/path/to/location"}
+        ]
     }
 }
