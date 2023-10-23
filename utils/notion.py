@@ -208,3 +208,5 @@ class Notion:
                 func(label=storage["label"], path=storage["path"])
             else:
                 logger.warn(f"{storage['path']} not found. Skipping.")
+            # TODO remove return to loop through all locations
+            return  # stop after the first location
