@@ -13,20 +13,22 @@ logger = logging.getLogger(__name__)
 
 
 class Movie:
-    title: str = None
-    original_title: str = None
-    notion_id: str = None
-    imdb_id: str = None
-    genres: List[str] = []
-    directors: List[str] = []
-    actors: List[str] = []
-    countries: List[str] = []
-    locations: List[str] = []
-    languages: List[str] = []
-    year: int = None
-    poster_url: str = None
-    tagline: str = None
-    rating: int = None
+
+    def __init__(self):
+        self.title = None
+        self.original_title = None
+        self.notion_id = None
+        self.imdb_id = None
+        self.genres = []
+        self.directors = []
+        self.actors = []
+        self.countries =  []
+        self.locations = []
+        self.languages = []
+        self.year = None
+        self.poster_url = None
+        self.tagline = None
+        self.rating = None
 
     def in_notion(self) -> bool:
         """
@@ -125,7 +127,7 @@ class Movie:
                 "type": "files",
                 "files": [
                     {
-                        "name": self.poster_url,
+                        "name": self.title[:100],
                         "type": "external",
                         "external": {
                             "url": self.poster_url
@@ -215,7 +217,7 @@ class MovieManager(Notion):
         self.genre_database_id = genre_database_id
         self.omdb_api_key = omdb_api_key
         self.load_genres()
-        self.movies = self.load_records(self.movie_database_id)
+        # self.movies = self.load_records(self.movie_database_id)
 
     def load_genres(self):
         genres = self.load_records(self.genre_database_id)
@@ -284,6 +286,8 @@ class MovieManager(Notion):
         for audio_element in root.findall(".//fileinfo/streamdetails/audio"):
             language_element = audio_element.find("language")
             if language_element is not None:
+                language = language_element.text
+                logger.info(f"Added language: {language}")
                 movie.languages.append(language_element.text)
 
         movie.locations.append(label)
@@ -325,21 +329,22 @@ class MovieManager(Notion):
     def add_movie(self, movie: Movie):
         logger.debug(f"Adding {movie.title}")
         try:
-            pprint(movie.properties)
-            # self.save_record(self.movie_database_id, movie.properties)
+            self.save_record(self.movie_database_id, movie.properties)
+            logger.info(f"Created movie record for: {movie.title}")
         except BaseException as e:
+            logger.error(f"Error creating movie \"{movie.title}\":")
             logger.error(str(e))
 
     def update_movie(self, existing_movie: Dict, stored_movie: Movie):
-        pprint(stored_movie.properties)
         if stored_movie.equals(existing_movie):
-            logger.debug(f"\"{stored_movie.title}\" is unchanged")
+            logger.info(f"Skipping \"{stored_movie.title}\" - unchanged")
             return
 
         logger.debug(f"Updating \"{stored_movie.title}\"")
         record_id = existing_movie["id"]
-
-        # self.update_record(self.movie_database_id, record_id, stored_movie.properties)
+        # pprint(stored_movie.properties)
+        self.update_record(self.movie_database_id, record_id, stored_movie.properties)
+        logger.info(f"Updated {stored_movie.title}")
 
     def add_or_update_movie(self, label: str, root: str, dir: str):
         title, year = dir.rsplit('(', 1)
@@ -373,7 +378,7 @@ class MovieManager(Notion):
                     # If there are brackets we have a valid movie
                     self.add_or_update_movie(label, root, dir)
                     counter += 1
-                    if counter >= 2:
+                    if counter >= 6:
                         exit()
 
     def add_or_update_movies(self, media_locations):
