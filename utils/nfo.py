@@ -71,7 +71,7 @@ class NFO:
     def year(self) -> int:
         year = self.root.find(".//year")
         if year is not None:
-            return int(year)
+            return int(year.text)
 
     @property
     def duration(self) -> int:
