@@ -1,7 +1,4 @@
-import os
 import logging
-
-from pprint import pprint
 
 from .movies import MovieManager
 
