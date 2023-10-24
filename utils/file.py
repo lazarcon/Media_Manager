@@ -95,3 +95,28 @@ def load_config():
     """
     path = os.path.join(APP_DIR, CONFIG_FILE)
     return load_json(path)
+
+
+def process_locations(locations, action_function):
+    """
+    Process locations by applying a custom action function to each location.
+
+    :param locations: A list of dictionaries containing information about media locations.
+                      Each dictionary should have 'label' and 'path' keys.
+    :param action_function: A custom function to be applied to each location.
+                           It should take 'label' and 'path' as arguments.
+
+    Example usage:
+    locations = [
+        {"label": "Location A", "path": "/path/to/locationA"},
+        {"label": "Location B", "path": "/path/to/locationB"},
+    ]
+    process_locations(locations, custom_action_function)
+    """
+    for location in locations:
+        path = location["path"]
+        label = location["label"]
+        if os.path.ismount(path) or os.path.exists(path):
+            action_function(label=label, path=path)
+        else:
+            logger.warning(f"{label} not found at {path}. Skipping.")
