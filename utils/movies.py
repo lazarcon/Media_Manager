@@ -435,8 +435,7 @@ class LocalMovieRepository:
 
         # Add both existing and new genres to the movie
         for language in existing_languages + new_languages:
-            movie.countries.append(language)
-
+            movie.languages.append(language)
 
     def find_movie_by_title_and_year(self, title: str, year: int) -> Movie:
         return self.session.query(Movie).filter(
@@ -444,7 +443,10 @@ class LocalMovieRepository:
             Movie.year == year
         ).first()
 
-    def add_or_update_movie(self, nfo: NFO, label: str, movie_path: str):
+    def add_or_update_movie(self, nfo: NFO,
+                            label: str,
+                            movie_path: str,
+                            poster_url: str):
         with self.session.begin() as transaction:
             movie = self.find_movie_by_title_and_year(title=nfo.title, year=nfo.year)
             if movie is None:
@@ -455,12 +457,13 @@ class LocalMovieRepository:
             movie.rating = nfo.rating
             movie.imdb_id = nfo.imdb_id
             movie.tagline_text = nfo.tagline_text
+            movie.poster_url = poster_url
             self._append_movie_path(movie, label, movie_path)
             self._append_movie_actors(movie, nfo.actors)
             self._append_movie_directors(movie, nfo.directors)
             self._append_movie_genres(movie, nfo.genres)
             self._append_movie_countries(movie, nfo.countries)
-            self._append_movie_languages(movie, nfo.lanuages)
+            self._append_movie_languages(movie, nfo.languages)
 
             transaction.commit()  # Commit the transaction
 
@@ -519,10 +522,10 @@ class MovieManager(Notion):
             return
 
         # Add poster_url
-        nfo.poster_url = self.posters.get_movie_poster_url(nfo.imdb_id)
+        poster_url = self.posters.get_movie_poster_url(nfo.imdb_id)
         session = get_session()
         repository = LocalMovieRepository(session)
-        repository.add_or_update_movie(nfo, label, movie_path)
+        repository.add_or_update_movie(nfo, label, movie_path, poster_url)
 
     def _add_or_update_stored_movies(self, label: str, path: str) -> None:
         """
