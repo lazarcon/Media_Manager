@@ -8,6 +8,7 @@ from typing import List, Dict
 from pprint import pprint
 
 from .notion import Notion
+# from .models import Movie, MovieGenre, Person, Country, Language
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,6 @@ class Movie:
 
     def __init__(self):
         self.title = None
-        self.original_title = None
         self.notion_id = None
         self.imdb_id = None
         self.genres = []
@@ -241,21 +241,32 @@ class MovieManager(Notion):
         movie = Movie()
         tree = ET.parse(nfo_file_path)
         root = tree.getroot()
-        movie.title = root.find(".//title").text
-        movie.original_title = root.find(".//originaltitle").text
-        movie.year = int(root.find(".//year").text)
-        movie.tagline = root.find(".//tagline").text
+        title = root.find(".//title")
+        if title is not None:
+            movie.title = title.text
+
+        original_title = root.find(".//originaltitle")
+        if original_title is not None:
+            movie.original_title = original_title.text
+
+        year = root.find(".//year")
+        if year is not None:
+            movie.year = int(year.text)
+
+        tagline = root.find(".//tagline")
+        if tagline is not None:
+            movie.tagline = tagline.text
 
         # Extract imdb id
-        movie.imdb_id = root.find(".//id").text
+        movie.imdb_id = root.find(".//id")
         if movie.imdb_id is not None:
-            movie.poster_url = self.get_movie_poster_url(movie.imdb_id)
+            movie.poster_url = self.get_movie_poster_url(movie.imdb_id.text)
 
         # Extract rating
-        rating = root.find(".//rating").text
+        rating = root.find(".//rating")
         if rating is not None:
             try:
-                stars = int(round(float(rating) / 2, 0))
+                stars = int(round(float(rating.text) / 2, 0))
                 movie.rating = stars
             except BaseException:
                 # rating could not be converted, so just ignore this
@@ -263,13 +274,19 @@ class MovieManager(Notion):
 
         # Extract genres
         for genre in root.findall(".//genre"):
-            movie.genres.append(self.genres[genre.text])
+            genre = genre.text
+            if genre not in ["Foreign"]:
+                if genre in list(self.genres.keys()):
+                    movie.genres.append(self.genres[genre])
+                else:
+                    logger.warn(f"Genre {genre} not defined. Skipping this genre")
 
         # Extract cast
         for actor in root.findall(".//actor"):
-            name = actor.find('name').text
-            # role = actor.find('role').text
-            movie.actors.append(name)
+            name = actor.find("name")
+            if name is not None:
+                # role = actor.find('role').text
+                movie.actors.append(name.text)
             # Not more than the top three named actors
             if len(movie.actors) >= 3:
                 break
@@ -286,8 +303,6 @@ class MovieManager(Notion):
         for audio_element in root.findall(".//fileinfo/streamdetails/audio"):
             language_element = audio_element.find("language")
             if language_element is not None:
-                language = language_element.text
-                logger.info(f"Added language: {language}")
                 movie.languages.append(language_element.text)
 
         movie.locations.append(label)
@@ -330,56 +345,69 @@ class MovieManager(Notion):
         logger.debug(f"Adding {movie.title}")
         try:
             self.save_record(self.movie_database_id, movie.properties)
-            logger.info(f"Created movie record for: {movie.title}")
+            print(f"Created movie record for: {movie.title}")
         except BaseException as e:
             logger.error(f"Error creating movie \"{movie.title}\":")
             logger.error(str(e))
 
     def update_movie(self, existing_movie: Dict, stored_movie: Movie):
         if stored_movie.equals(existing_movie):
-            logger.info(f"Skipping \"{stored_movie.title}\" - unchanged")
+            print(f"Skipping \"{stored_movie.title}\" - unchanged")
             return
 
         logger.debug(f"Updating \"{stored_movie.title}\"")
         record_id = existing_movie["id"]
         # pprint(stored_movie.properties)
         self.update_record(self.movie_database_id, record_id, stored_movie.properties)
-        logger.info(f"Updated {stored_movie.title}")
+        print(f"Updated {stored_movie.title}")
+
+    def find_nfo_path(self, root: str, dir: str) -> str:
+        folder = os.path.join(root, dir)
+        nfo_files = []
+        for filename in os.listdir(folder):
+            if filename.endswith(".nfo"):
+                nfo_files.append(os.path.join(folder, filename))
+        if len(nfo_files) == 0:
+            raise BaseException(f"No .nfo file found in {folder}")
+        elif len(nfo_files) > 1:
+            raise BaseException(f"More than one .nfo file found in {folder}")
+        else:
+            return nfo_files[0]
 
     def add_or_update_movie(self, label: str, root: str, dir: str):
         title, year = dir.rsplit('(', 1)
         title = title.strip()
         year = int(year.replace(')', '').strip())
         existing_movies = self.find_movie(title, year)
-        nfo_file_path = os.path.join(root, dir, title + ".nfo")
-        if not os.path.exists(nfo_file_path):
-            logger.warn(f"{nfo_file_path} not found for {title} ({year})")
-        else:
-            try:
-                movie = self.to_movie(label, nfo_file_path)
-            except BaseException as e:
-                logger.warn(f"Could not create movie from {nfo_file_path}. Skipping")
-                logger.warn(f"Reason: {str(e)}")
-                return
+        try:
+            nfo_file_path = self.find_nfo_path(root, dir)
+        except BaseException as e:
+            logger.warn(f"{str(e)} - Skipping {title} ({year})")
+            return
 
-            if len(existing_movies) == 0:
-                self.add_movie(movie)
-            elif len(existing_movies) == 1:
-                self.update_movie(existing_movies[0], movie)
-            else:
-                logger.warn(f"Multiple matching movies found for {title} ({year}). Skipping")
+        try:
+            movie = self.to_movie(label, nfo_file_path)
+        except BaseException as e:
+            logger.warn(f"Could not create movie from {nfo_file_path}. Skipping")
+            logger.warn(f"Reason: {str(e)}")
+            return
+
+        if len(existing_movies) == 0:
+            pass
+            # self.add_movie(movie)
+        elif len(existing_movies) == 1:
+            pass
+            # self.update_movie(existing_movies[0], movie)
+        else:
+            logger.warn(f"Multiple matching movies found for {title} ({year}). Skipping")
 
     def add_or_update_stored_movies(self, label: str, path: str) -> None:
         logger.debug(f"Updating movies stored @ {label} ({path})")
-        counter = 0
         for root, dirs, filenames in os.walk(path, followlinks=True):
             for dir in dirs:
                 if "(" in dir and ")" in dir:
                     # If there are brackets we have a valid movie
                     self.add_or_update_movie(label, root, dir)
-                    counter += 1
-                    if counter >= 6:
-                        exit()
 
     def add_or_update_movies(self, media_locations):
         self.do_with_all_locations(media_locations, self.add_or_update_stored_movies)
