@@ -199,14 +199,3 @@ class Notion:
                 save_json(filename, {"data": results})
         return results
 
-    def do_with_all_locations(self, locations, func) -> None:
-        """
-        Executes the passed function for all stored media locations
-        """
-        for storage in locations:
-            if os.path.exists(storage["path"]):
-                func(label=storage["label"], path=storage["path"])
-            else:
-                logger.warn(f"{storage['path']} not found. Skipping.")
-            # TODO remove return to loop through all locations
-            return  # stop after the first location
