@@ -121,7 +121,7 @@ class NFO:
         actors = []
         for actor in self.root.findall(".//actor"):
             name = actor.find("name")
-            if name:
+            if name is not None:
                 actors.append(name.text)
             if len(actors) >= MAX_ACTORS:
                 break
@@ -139,13 +139,14 @@ class NFO:
         countries = []
         for country in self.root.findall(".//country"):
             countries.append(country.text)
+        return countries
 
     @property
-    def lanuages(self) -> List[str]:
+    def languages(self) -> List[str]:
         languages = []
         for audio_element in self.root.findall(".//fileinfo/streamdetails/audio"):
             language_element = audio_element.find("language")
-            if language_element:
+            if language_element is not None:
                 languages.append(language_element.text)
         return languages
 
