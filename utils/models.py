@@ -69,48 +69,59 @@ class Base(DeclarativeBase):
 
 
 class Person(Base):
-
     __tablename__ = "persons"
 
     person_id: Mapped[int] = mapped_column(primary_key=True)
-    name = Column(VARCHAR(32), nullable=False, unique=True)
+    fullname = Column(VARCHAR(32), nullable=False, unique=True)
+
+    def __init__(self, fullname: str):
+        self.fullname = fullname
 
 
 class Country(Base):
-
     __tablename__ = "countries"
 
     country_id: Mapped[int] = mapped_column(primary_key=True)
-    name = Column(VARCHAR(32), nullable=False, unique=True)
+    country_name = Column(VARCHAR(32), nullable=False, unique=True)
+
+    def __init__(self, country_name: str):
+        self.country_name = country_name
 
 
 class Language(Base):
-
     __tablename__ = "languages"
 
     language_id: Mapped[int] = mapped_column(primary_key=True)
-    name = Column(VARCHAR(32), nullable=False, unique=True)
+    language_name = Column(VARCHAR(32), nullable=False, unique=True)
+
+    def __init__(self, language_name: str):
+        self.language_name = language_name
 
 
-class Path(Base):
-
-    __tablename__ = "paths"
-
-    path_id: Mapped[int] = mapped_column(primary_key=True)
-    path = Column(VARCHAR(255), nullable=False, unique=True)
-    storage_id: Mapped[int] = mapped_column(ForeignKey("storages.storage_id"))
-    storage = relationship("Storage", back_populates="paths")
-    movie_id: Mapped[int] = mapped_column(ForeignKey("movies.movie_id"))
-    movie = relationship("Movie", back_populates="paths")
-
-
-class Storage(Base):
-
-    __tablename__ = "storages"
+class StorageLocation(Base):
+    __tablename__ = "storage_locations"
 
     storage_id: Mapped[int] = mapped_column(primary_key=True)
     label = Column(VARCHAR(12), nullable=False, unique=True)
-    paths = relationship("Path", back_populates="storage")
+    paths = relationship("StoragePath", back_populates="storage")
+
+    def __init__(self, label: str):
+        self.label = label
+
+
+class StoragePath(Base):
+    __tablename__ = "storage_paths"
+
+    path_id: Mapped[int] = mapped_column(primary_key=True)
+    location_path = Column(VARCHAR(255), nullable=False, unique=True)
+    storage_id: Mapped[int] = mapped_column(ForeignKey("storage_locations.storage_id"))
+    storage = relationship("StorageLocation", back_populates="paths")
+    movie_id: Mapped[int] = mapped_column(ForeignKey("movies.movie_id"))
+    movie = relationship("Movie", back_populates="paths")
+
+    def __init__(self, storage: StorageLocation, location_path: str):
+        self.storage_id = storage.storage_id
+        self.location_path = location_path
 
 
 movie_genre_association = Table(
@@ -158,29 +169,36 @@ class MovieGenre(Base):
     __tablename__ = "movie_genres"
 
     movie_genre_id: Mapped[int] = mapped_column(primary_key=True)
-    name = Column(VARCHAR(32), nullable=False, unique=True)
+    genre_name = Column(VARCHAR(32), nullable=False, unique=True)
     notion_id = Column(VARCHAR(36))
+
+    def __init__(self, genre_name: str):
+        self.genre_name = genre_name
 
 
 class Movie(Base):
-
     __tablename__ = "movies"
 
-    movie_id: Mapped[int] = mapped_column(primary_key=True)
+    movie_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     notion_id = Column(VARCHAR(36))
     imdb_id = Column(VARCHAR(16))
     title = Column(VARCHAR(64), nullable=False)
-    year = Column(INTEGER, nullable=False)
+    year = Column(INTEGER, nullable=True)
     poster_url = Column(VARCHAR(200))
-    tagline = Column(VARCHAR(256))
+    tagline_text = Column(VARCHAR(256))
     rating = Column(VARCHAR(5))
-    length = Column(INTEGER)
+    duration = Column(INTEGER)
+
     genres: Mapped[List[MovieGenre]] = relationship(secondary=movie_genre_association)
     countries: Mapped[List[Country]] = relationship(secondary=movie_country_association)
-    languages: Mapped[List[Country]] = relationship(secondary=movie_language_association)
+    languages: Mapped[List[Language]] = relationship(secondary=movie_language_association)
     directors: Mapped[List[Person]] = relationship(secondary=movie_director_association)
     actors: Mapped[List[Person]] = relationship(secondary=movie_actor_association)
-    paths: Mapped[List[Path]] = relationship(back_populates="movie")
-    UniqueConstraint('title', 'year', sqlite_on_conflict='REPLACE')
-    created = Column(TIMESTAMP, default=func.current_timestamp())
+    paths: Mapped[List[StoragePath]] = relationship(back_populates="movie")
 
+    UniqueConstraint('title', 'year', sqlite_on_conflict='REPLACE')
+    created = Column(TIMESTAMP, server_default=func.current_timestamp())
+
+    def __init__(self, title: str, year: int):
+        self.title = title
+        self.year = year
