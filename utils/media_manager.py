@@ -16,5 +16,5 @@ class MediaManager:
         )
         self.local_media_locations = config["local_media"]
 
-    def update(self) -> None:
-        self.movies_manager.update(self.local_media_locations)
+    def run(self) -> None:
+        self.movies_manager.run(self.local_media_locations)
