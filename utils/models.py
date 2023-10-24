@@ -109,7 +109,7 @@ class Storage(Base):
     __tablename__ = "storages"
 
     storage_id: Mapped[int] = mapped_column(primary_key=True)
-    name = Column(VARCHAR(12), nullable=False, unique=True)
+    label = Column(VARCHAR(12), nullable=False, unique=True)
     paths = relationship("Path", back_populates="storage")
 
 

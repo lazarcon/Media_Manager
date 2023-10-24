@@ -14,7 +14,7 @@ class MediaManager:
             genre_database_id=config["notion_media"]["movies"]["genre_db"],
             omdb_api_key=config["omdb_api_key"]
         )
-        self.local_media_locations = config["local_media"]
+        self.local_media_locations = config["local_media_locations"]
 
     def run(self) -> None:
         self.movies_manager.run(self.local_media_locations)
