@@ -10,7 +10,7 @@
     "local_media_locations": {
         "movies": [
             {"label": "LOCATION_1", "path": "/path/to/location"},
-            {"label": "LOCATION_2", "path": "/path/to/location"}
+            {"label": "LOCATION_2", "path": "/path/to/location", "mount_point": "/path"}
         ]
     }
 }
