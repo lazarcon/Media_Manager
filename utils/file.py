@@ -2,7 +2,7 @@ import os
 import json
 import logging
 
-from typing import Dict
+from typing import Dict, List, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -96,27 +96,44 @@ def load_config():
     path = os.path.join(APP_DIR, CONFIG_FILE)
     return load_json(path)
 
-
-def process_locations(locations, action_function):
+def missing_path_warning(label: str, path: str) -> None:
     """
-    Process locations by applying a custom action function to each location.
+    Log a warning message indicating that the path was not found and skipped.
 
-    :param locations: A list of dictionaries containing information about media locations.
-                      Each dictionary should have 'label' and 'path' keys.
-    :param action_function: A custom function to be applied to each location.
-                           It should take 'label' and 'path' as arguments.
+    Args:
+        label: The label of the path that was not found.
+        path: The path that was not found.
+    """
+    logger.warning(f"{label} not found at {path}. Skipping.")
 
-    Example usage:
-    locations = [
-        {"label": "Location A", "path": "/path/to/locationA"},
-        {"label": "Location B", "path": "/path/to/locationB"},
-    ]
-    process_locations(locations, custom_action_function)
+
+def process_locations(locations: List[Dict],
+                      action_function: Callable[[str, str], None],
+                      missing_function: Callable[[str, str], None] = missing_path_warning) -> None:
+    """
+    Process a list of media locations by applying a custom action function to each location.
+    Locations that are not mounted or have missing paths are skipped.
+
+    Args:
+        locations: A list of dictionaries containing information about media locations.
+                        Each dictionary should have 'label' and 'path' keys. A 'mount_point' is optional.
+        action_function: A custom function to be applied to each location.
+                        It should take 'label' and 'path' as arguments.
+        missing_function: A custom function to be applied to each location that could not be found.
+                        It should take 'label' and 'path' as arguments.
+
+    Returns:
+        None
     """
     for location in locations:
-        path = location["path"]
-        label = location["label"]
-        if os.path.ismount(path) or os.path.exists(path):
-            action_function(label=label, path=path)
+        path = location.get("path")
+        label = location.get("label")
+        mount_point = location.get("mount_point")
+
+        if mount_point is None or os.path.ismount(mount_point):
+            if os.path.exists(path):
+                action_function(label, path)
+            else:
+                missing_function(label, path)
         else:
-            logger.warning(f"{label} not found at {path}. Skipping.")
+            logger.warning(f"Skipping drive {label} since it is not mounted.")
