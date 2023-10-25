@@ -4,25 +4,25 @@ from sqlalchemy import Table, Column, UniqueConstraint, ForeignKey, func
 from sqlalchemy.orm import (
     DeclarativeBase,
     relationship,
-    synonym,
+    joinedload,
     Mapped,
     mapped_column
 )
 from sqlalchemy.orm.exc import DetachedInstanceError
 from sqlalchemy.dialects.sqlite import (
-    BLOB,
-    BOOLEAN,
-    CHAR,
-    DATE,
-    DATETIME,
-    DECIMAL,
-    FLOAT,
+    # BLOB,
+    # BOOLEAN,
+    # CHAR,
+    # DATE,
+    # DATETIME,
+    # DECIMAL,
+    # FLOAT,
     INTEGER,
-    NUMERIC,
-    JSON,
-    SMALLINT,
-    TEXT,
-    TIME,
+    # NUMERIC,
+    # JSON,
+    # SMALLINT,
+    # TEXT,
+    # TIME,
     TIMESTAMP,
     VARCHAR,
 )
