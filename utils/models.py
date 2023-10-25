@@ -198,6 +198,7 @@ class Movie(Base):
 
     UniqueConstraint('title', 'year', sqlite_on_conflict='REPLACE')
     created = Column(TIMESTAMP, server_default=func.current_timestamp())
+    last_update = Column(TIMESTAMP, onupdate=func.current_timestamp())
 
     def __init__(self, title: str, year: int):
         self.title = title
