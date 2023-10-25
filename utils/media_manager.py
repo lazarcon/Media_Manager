@@ -1,7 +1,7 @@
 import logging
 
 from typing import List, Dict
-from .movies import MovieManager
+from .movie_manager import MovieManager
 
 logger = logging.getLogger(__name__)
 
