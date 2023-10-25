@@ -202,3 +202,7 @@ class Movie(Base):
     def __init__(self, title: str, year: int):
         self.title = title
         self.year = year
+
+    def __repr__(self):
+        year = "" if self.year is None else f" ({self.year})"
+        return f"{self.title}{year}"
