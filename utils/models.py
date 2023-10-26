@@ -207,3 +207,10 @@ class Movie(Base):
     def __repr__(self):
         year = "" if self.year is None else f" ({self.year})"
         return f"{self.title}{year}"
+
+    @property
+    def unique_key(self):
+        if self.year is None:
+            return self.title
+        else:
+            return f"{self.year}-{self.title}"
