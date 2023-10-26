@@ -35,7 +35,7 @@ class NotionTitle(NotionProperty):
             value = property.get(name, {}).get("title", [{}])[0].get("text", {}).get("content")
         except BaseException:
             value = None
-        super().__(name, value)
+        super().__init__(name, value)
 
     def as_property(self) -> Dict:
         return {
@@ -58,7 +58,7 @@ class NotionNumber(NotionProperty):
             value = property.get(name, {}).get("number")
         except BaseException:
             value = None
-        super().__(name, value)
+        super().__init__(name, value)
 
     def as_property(self) -> Dict:
         if self.value is not None:
@@ -72,7 +72,7 @@ class NotionText(NotionProperty):
             value = property.get(name, {}).get("rich_text", [{}])[0].get("text", {}).get("content")
         except BaseException:
             value = None
-        super().__(name, value)
+        super().__init__(name, value)
 
     def as_property(self) -> Dict:
         if self.value is not None:
@@ -97,7 +97,7 @@ class NotionSelect(NotionProperty):
             value = property.get(name, {"select": {}}).get("select", {"name": None}).get("name")
         except BaseException:
             value = None
-        super().__(name, value)
+        super().__init__(name, value)
 
     def as_property(self) -> Dict:
         if self.value is not None:
@@ -118,7 +118,7 @@ class NotionMultiSelect(NotionProperty):
             value = [element["name"] for element in property.get(name, {}).get("multi_select", [])]
         except BaseException:
             value = None
-        super().__(name, value)
+        super().__init__(name, value)
 
     def as_property(self) -> Dict:
         if self.value is not None:
@@ -137,7 +137,7 @@ class NotionRelation(NotionProperty):
             value = [element["name"] for element in property.get(name, {}).get("relation", [])]
         except BaseException:
             value = None
-        super().__(name, value)
+        super().__init__(name, value)
 
     def as_property(self) -> Dict:
         if self.value is not None:
@@ -156,7 +156,7 @@ class NotionURL(NotionProperty):
             value = property.get(name, {}).get("url")
         except BaseException:
             value = None
-        super().__(name, value)
+        super().__init__(name, value)
 
     def as_property(self) -> Dict:
         if self.value is not None:
@@ -172,7 +172,7 @@ class NotionExternalFile(NotionProperty):
             value = property.get(name, {}).get("files", [{}])[0].get("external", {}).get("url")
         except BaseException:
             value = None
-        super().__(name, value)
+        super().__init__(name, value)
 
     def as_property(self) -> Dict:
         if self.value is not None:
