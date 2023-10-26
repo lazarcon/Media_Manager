@@ -89,7 +89,7 @@ class NFO:
     def imdb_id(self) -> str:
         imdb_id = self.root.find(".//id")
         if imdb_id is not None and imdb_id.text is not None and len(imdb_id.text) > 0:
-            imdb_id.text
+            return imdb_id.text
 
     @property
     def rating(self) -> float:
