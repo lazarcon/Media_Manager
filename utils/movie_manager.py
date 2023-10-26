@@ -8,7 +8,6 @@ from typing import List, Dict
 from pprint import pprint
 
 from .file import process_locations
-from .notion import Notion
 from .nfo import NFO
 from .database import get_session
 from .models import (
@@ -21,6 +20,18 @@ from .models import (
     StorageLocation,
     func,
     joinedload)
+from .notion import (
+    NotionPage,
+    NotionTitle,
+    NotionNumber,
+    NotionText,
+    NotionSelect,
+    NotionMultiSelect,
+    NotionRelation,
+    NotionURL,
+    NotionExternalFile,
+    Notion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,52 +75,23 @@ class MoviePosterRepository:
         return poster_url
 
 
-class NotionMovie():
+class NotionMovie(NotionPage):
 
     def __init__(self, data):
-        self.id = data.get("id")
-        self.created_time = data.get("created_time")
-        self.last_edited_time = data.get("last_edited_time")
-        self.created_by = data.get("created_by")
-        self.last_edited_by = data.get("last_edited_by")
-        self.cover = data.get("cover")
-        self.icon = data.get("icon")
-        self.parent = data.get("parent")
-        self.archived = data.get("archived")
-        self.url = data.get("url")
-        self._properties = data.get("properties")
-
+        super().__init__(data)
+        properties = data.get("properties")
         # You can parse specific properties as needed
-        self.title = self._properties.get("Titel", {}).get("title", [{}])[0].get("text", {}).get("content")
-        self.year = self._properties.get("Jahr", {}).get("number")
-        try:
-            self.rating = self._properties.get("Rating", {"select": {}}).get("select", {"name": None}).get("name")
-        except BaseException as e:
-            pass
-        try:
-            self.genres = [genre["name"] for genre in self._properties.get("Genre", {}).get("relation", [])]
-        except BaseException as e:
-            pass
-        try:
-            self.actors = [actor["name"] for actor in self._properties.get("Schauspieler", {}).get("multi_select", [])]
-        except BaseException as e:
-            pass
-        try:
-            self.directors = [director["name"] for director in self._properties.get("Regie", {}).get("multi_select", [])]
-        except BaseException as e:
-            pass
-        try:
-            self.languages = [language["name"] for language in self._properties.get("Sprachen", {}).get("multi_select", [])]
-        except BaseException as e:
-            pass
-        try:
-            self.imdb_url = self._properties.get("Imdb", {}).get("url")
-        except BaseException as e:
-            pass
-        try:
-            self.poster_url = self._properties.get("Poster", {}).get("files", [{}])[0].get("external", {}).get("url")
-        except BaseException as e:
-            pass
+        self.title = NotionTitle("Titel", properties)
+        self.year = NotionNumber("Jahr", properties)
+        self.tagline = NotionText("Handlung", properties)
+        self.rating = NotionSelect("Rating", properties)
+        self.duration = NotionNumber("Dauer", properties)
+        self.languages = NotionMultiSelect("Sprachen", properties)
+        self.countries = NotionMultiSelect("L\u00e4nder", properties)
+        self.locations = NotionMultiSelect("Speicherorte", properties)
+        self.genres = NotionRelation("Genre", properties)
+        self.imdb_url = NotionURL("Imdb", properties)
+        self.poster_url = NotionExternalFile("Poster", properties)
 
     def __str__(self):
         return f"{self.title} ({self.year})"
@@ -125,112 +107,25 @@ class NotionMovie():
         """
         Converts the Movie object to a dictionary
         """
-        properties = {
-            "Titel": {
-                "id": "title",
-                "type": "title",
-                "title": [{
-                        "type": "text",
-                        "text": {"content": self.title}
-                    }
-                ]
-            }
+        return {
+            self.title.as_property(),
+            self.year.as_property(),
+            self.duration.as_property(),
+            self.tagline.as_property(),
+            self.rating.as_property(),
+            self.countries.as_property(),
+            self.languages.as_property(),
+            self.genres.as_property(),
+            self.imdb_url.as_property(),
+            self.poster_url.as_property(),
+            self.locations.as_property()
         }
-        if self.year is not None:
-            properties["Jahr"] = {"type": "number", "number": self.year}
-        # Append countries if any
-        if len(self.countries) > 0:
-            properties["L\u00e4nder"] = {
-                "type": "multi_select",
-                "multi_select": [{"name": country} for country in self.countries]
-            }
 
-        # Append rating locations if any
-        if self.rating is not None:
-            properties["Rating"] = {
-                "type": "select",
-                "select": {
-                    "name": "\u2605" * self.rating,
-                }
-            }
-
-        # Append storage locations if any
-        if len(self.locations) > 0:
-            properties["Speicherorte"] = {
-                "type": "multi_select",
-                "multi_select": [{"name": location} for location in self.locations]
-            }
-
-        # Append tagline if any
-        if self.tagline is not None:
-            properties["Handlung"] = {
-                "type": "rich_text",
-                "rich_text": [
-                    {
-                        "type": "text",
-                        "text": {
-                        "content": self.tagline}
-                    }
-                ]
-            }
-
-        # Append imdb link if any
-        if self.imdb_id is not None:
-            properties["Imdb"] = {"type": "url", "url": f"https://www.imdb.com/title/{self.imdb_id}/"}
-
-        # Append genres if any
-        if len(self.genres) > 0:
-            properties["Genre"] = {
-                "type": "relation",
-                "relation": [{"id": id} for id in self.genres]
-            }
-
-        # Append languages if any
-        if len(self.languages) > 0:
-            properties["Sprachen"] = {
-                "type": "multi_select",
-                "multi_select": [{"name": language} for language in self.languages]
-            }
-
-        # Append directors if any
-        if len(self.directors) > 0:
-            properties["Regie"] = {
-                "type": "multi_select",
-                "multi_select": [{"name": director} for director in self.directors]
-            }
-
-        # Append actors if any
-        if len(self.actors) > 0:
-            properties["Schauspieler"] = {
-                "multi_select": [{"name": actor} for actor in self.actors]
-            }
-
-        # Append poster if any
-        if self.poster_url is not None:
-            properties["Poster"] = {
-                "type": "files",
-                "files": [
-                    {
-                        "name": self.title[:100],
-                        "type": "external",
-                        "external": {
-                            "url": self.poster_url
-                        }
-                    }
-                ]
-            }
-        if self.duration is not None:
-            properties["Länge"] = {"type": "number", "number": self.duration}
-
-        return properties
-
-    def equals(self, movie_data: Dict) -> bool:
+    def update_from_movie(self, movie: Movie) -> None:
         """
-        Checks if the records are equal
-        """
-        properties = movie_data["properties"]
-        genres = properties["Genre"]["relation"]
-        if len(genres) != len(self.genres):
+        Updates Notion Movie with data from stored movie
+
+        if len(self.genres.value) != len(self.genres):
             return False
         for genre in genres:
             if genre["id"] not in self.genres:
@@ -291,7 +186,7 @@ class NotionMovie():
                 return False
 
         return True
-
+        """
 
 class RemoteMovieRepository(Notion):
 
@@ -324,7 +219,7 @@ class RemoteMovieRepository(Notion):
                 logger.error(str(e))
         return movies
 
-    def remove_locations(self, movie_ids: List[str]) -> None:
+    def remove_all_locations_from_movies(self, movie_ids: List[str]) -> None:
         logger.info("Removing locations from movies")
         payload = {
             "Speicherorte": {
@@ -338,7 +233,7 @@ class RemoteMovieRepository(Notion):
     def add_movie(self, movie: NotionMovie):
         logger.debug(f"Adding {movie.title}")
         try:
-            self.save_record(self.movie_database_id, movie.properties)
+            self.add_record(self.movie_database_id, movie)
             print(f"Created movie record for: {movie.title}")
         except BaseException as e:
             logger.error(f"Error creating movie \"{movie.title}\":")
@@ -350,9 +245,8 @@ class RemoteMovieRepository(Notion):
             return
 
         logger.debug(f"Updating \"{stored_movie.title}\"")
-        record_id = existing_movie["id"]
         # pprint(stored_movie.properties)
-        self.update_record(self.movie_database_id, record_id, stored_movie.properties)
+        self.update_record(stored_movie.properties)
         print(f"Updated {stored_movie.title}")
 
 
@@ -676,7 +570,7 @@ class MovieManager:
                 elif len(nfo_files) == 0 and len(movies) == 1:
                     logger.warn(f"Found no .nfo file but a movie in {folder}")
 
-    def _compare_movies(self, local_movies: List[Movie], notion_movies: List[NotionMovie]):
+    def _compare_movies(self, local_movies: List[Movie], notion_movies: List[NotionMovie], last_update = None):
         """
         Compare local movie data with Notion movie data to identify changes.
 
@@ -702,8 +596,23 @@ class MovieManager:
             notion_movie = notion_movie_dict.get(title_year)
             if notion_movie is None:
                 added_movies.append(local_movie)
-            elif local_movie.last_update > notion_movie.last_update:
-                updated_movies.append(local_movie)
+            elif (
+                last_update is None
+                and local_movie.last_update is not None
+                and local_movie.last_update > notion_movie.last_update
+            ):
+                updated_movies.append({"local_movie": local_movie, "notion_movie": notion_movie})
+            elif (
+                last_update is None
+                and local_movie.last_update is not None
+            ):
+                updated_movies.append({"local_movie": local_movie, "notion_movie": notion_movie})
+
+            elif (
+                last_update is not None
+                and last_update > notion_movie.last_update
+            ):
+                updated_movies.append({"local_movie": local_movie, "notion_movie": notion_movie})
 
         # Identify removed movies
         for title_year, notion_movie in notion_movie_dict.items():
@@ -712,16 +621,16 @@ class MovieManager:
 
         return added_movies, updated_movies, missing_movies
 
-    def _update_notion(self, removed_movie_ids: List[str] = []):
+    def _update_notion(self, removed_movie_ids: List[str] = [], last_update = None):
         """
         update the notion so database with new data from the local database
         """
-        self.remote_movies.remove_locations(removed_movie_ids)
+        self.remote_movies.remove_all_locations_from_movies(removed_movie_ids)
         session = get_session()
         local_movies = LocalMovieRepository(session).all_movies()
         notion_movies = self.remote_movies.all_movies()
         # Compare local data with Notion data
-        added_movies, updated_movies, missing_movies = self._compare_movies(local_movies, notion_movies)
+        added_movies, updated_movies, missing_movies = self._compare_movies(local_movies, notion_movies, last_update)
 
         # Update Notion records for added and updated movies
         print("Added movies:")
@@ -736,8 +645,6 @@ class MovieManager:
         for movie in missing_movies:
             print("\t", movie)
 
-
-
     def run(self, locations):
         """
         Updates the notion.so movie database
@@ -749,11 +656,20 @@ class MovieManager:
         Third, for movies that are on notion.so, but not in my local network, remove locations that where searched, and leave films that have no storage location alone.
 
         """
-        locations = [{"label": "Wotan", "path": "/home/cola/Videos/Movies/Charlie Chaplin"}]
+        locations = [{"label": "Wotan", "path": "/home/cola/Videos/Movies"}]
+
         # Get the last update before we are performing actions
         last_update = LocalMovieRepository(get_session()).get_last_movie_update()
         # last_update = datetime.strptime("2023-10-24 12:39:15", "%Y-%m-%d %H:%M:%S")
-        # removed_movie_ids = self._remove_missing_movies(locations)
-        # process_locations(locations, self._add_or_update_stored_movies)
-        removed_movie_ids = []
-        self._update_notion(removed_movie_ids)
+        if last_update is not None:
+            logger.info(f"Last update: {last_update}")
+
+        # Remove Missing Movies
+        removed_movie_ids = self._remove_missing_movies(locations)
+        # removed_movie_ids = []
+
+        # Check for new movies or movie updates
+        process_locations(locations, self._add_or_update_stored_movies)
+
+        # Update the notion database
+        self._update_notion(removed_movie_ids, last_update)
