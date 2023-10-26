@@ -1,6 +1,7 @@
 import os
 import logging
 import requests
+import datetime
 
 from abc import ABC, abstractmethod
 from pprint import pprint
@@ -206,6 +207,11 @@ class NotionPage(ABC):
         self.archived = data.get("archived")
         self.url = data.get("url")
         self._properties = data.get("properties")
+
+    @property
+    def last_update(self):
+        date_format = "%Y-%m-%dT%H:%M:%S.%fZ"
+        return datetime.datetime.strptime(self.last_edited_time, date_format)
 
     @abstractmethod
     def get_properties(self):
