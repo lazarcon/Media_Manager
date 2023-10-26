@@ -93,17 +93,25 @@ class NotionMovie(NotionPage):
         self.imdb_url = NotionURL("Imdb", properties)
         self.poster_url = NotionExternalFile("Poster", properties)
 
-    def __str__(self):
-        return f"{self.title} ({self.year})"
+    def __repr__(self):
+        return f"{self.title.value} ({self.year.value})"
 
     def in_notion(self) -> bool:
         """
         Checks, if the movie has a notion_id
         """
-        return not self.notion_id is None
+        return self.id is not None
 
     @property
-    def properties(self) -> dict:
+    def unique_key(self):
+        if self.year is None:
+            return self.title
+        elif self.year.value is None:
+            return self.title
+        else:
+            return f"{self.year.value}-{self.title.value}"
+
+    def get_properties(self) -> dict:
         """
         Converts the Movie object to a dictionary
         """
@@ -188,6 +196,7 @@ class NotionMovie(NotionPage):
         return True
         """
 
+
 class RemoteMovieRepository(Notion):
 
     def __init__(self,
@@ -217,6 +226,7 @@ class RemoteMovieRepository(Notion):
             except BaseException as e:
                 logger.error(f"Could not create movie from: {record.get('url')}")
                 logger.error(str(e))
+                exit()
         return movies
 
     def remove_all_locations_from_movies(self, movie_ids: List[str]) -> None:
@@ -588,8 +598,8 @@ class MovieManager:
         missing_movies = []
 
         # Create dictionaries for efficient lookups
-        local_movie_dict = {f"{movie.title} ({movie.year})": movie for movie in local_movies}
-        notion_movie_dict = {f"{movie.title} ({movie.year})": movie for movie in notion_movies}
+        local_movie_dict = {f"{movie.unique_key})": movie for movie in local_movies}
+        notion_movie_dict = {f"{movie.unique_key})": movie for movie in notion_movies}
 
         # Identify added and updated movies
         for title_year, local_movie in local_movie_dict.items():
@@ -607,7 +617,6 @@ class MovieManager:
                 and local_movie.last_update is not None
             ):
                 updated_movies.append({"local_movie": local_movie, "notion_movie": notion_movie})
-
             elif (
                 last_update is not None
                 and last_update > notion_movie.last_update
@@ -639,7 +648,7 @@ class MovieManager:
 
         print("Updated movies:")
         for movie in updated_movies:
-            print("\t", movie)
+            print("\t", movie["notion_movie"])
 
         print("Missing movies:")
         for movie in missing_movies:
@@ -656,7 +665,7 @@ class MovieManager:
         Third, for movies that are on notion.so, but not in my local network, remove locations that where searched, and leave films that have no storage location alone.
 
         """
-        locations = [{"label": "Wotan", "path": "/home/cola/Videos/Movies"}]
+        # locations = [{"label": "Wotan", "path": "/home/cola/Videos/Movies"}]
 
         # Get the last update before we are performing actions
         last_update = LocalMovieRepository(get_session()).get_last_movie_update()
@@ -672,4 +681,4 @@ class MovieManager:
         process_locations(locations, self._add_or_update_stored_movies)
 
         # Update the notion database
-        self._update_notion(removed_movie_ids, last_update)
+        # self._update_notion(removed_movie_ids, last_update)
