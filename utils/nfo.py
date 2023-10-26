@@ -58,37 +58,37 @@ class NFO:
     @property
     def title(self) -> str:
         title = self.root.find(".//title")
-        if title is not None:
+        if title is not None and title.text is not None and len(title.text) > 0:
             return title.text
 
     @property
     def original_title(self) -> str:
         original_title = self.root.find(".//originaltitle")
-        if original_title is not None:
+        if original_title is not None and original_title.text is not None and len(original_title.text) > 0:
             return original_title.text
 
     @property
     def year(self) -> int:
         year = self.root.find(".//year")
-        if year is not None:
+        if year is not None and year.text is not None and len(year.text) > 0:
             return int(year.text)
 
     @property
     def duration(self) -> int:
         duration = self.root.find(".//fileinfo/streamdetails/video/durationinseconds")
-        if duration is not None:
+        if duration is not None and duration.text is not None and len(duration.text) > 0:
             return int(duration.text)
 
     @property
     def tagline_text(self) -> str:
         tagline_text = self.root.find(".//tagline")
-        if tagline_text is not None:
+        if tagline_text is not None and tagline_text.text is not None and len(tagline_text.text) > 0:
             return tagline_text.text
 
     @property
     def imdb_id(self) -> str:
         imdb_id = self.root.find(".//id")
-        if imdb_id is not None:
+        if imdb_id is not None and imdb_id.text is not None and len(imdb_id.text) > 0:
             imdb_id.text
 
     @property
@@ -112,8 +112,9 @@ class NFO:
     def genres(self) -> List[str]:
         genres = []
         for genre in self.root.findall(".//genre"):
-            genre = genre.text
-            genres.append(genre)
+            if genre.text is not None and len(genre.text) > 0:
+                genre = genre.text
+                genres.append(genre)
         return genres
 
     @property
@@ -121,7 +122,7 @@ class NFO:
         actors = []
         for actor in self.root.findall(".//actor"):
             name = actor.find("name")
-            if name is not None:
+            if name is not None and name.text is not None and len(name.text) > 0:
                 actors.append(name.text)
             if len(actors) >= MAX_ACTORS:
                 break
@@ -131,14 +132,16 @@ class NFO:
     def directors(self) -> List[str]:
         directors = []
         for director in self.root.findall(".//director"):
-            directors.append(director.text)
+            if director.text is not None and len(director.text) > 0:
+                directors.append(director.text)
         return directors
 
     @property
     def countries(self) -> List[str]:
         countries = []
         for country in self.root.findall(".//country"):
-            countries.append(country.text)
+            if country.text is not None and len(country.text) > 0:
+                countries.append(country.text)
         return countries
 
     @property
@@ -146,7 +149,7 @@ class NFO:
         languages = []
         for audio_element in self.root.findall(".//fileinfo/streamdetails/audio"):
             language_element = audio_element.find("language")
-            if language_element is not None:
+            if language_element is not None and language_element.text is not None and len(language_element.text) > 0:
                 languages.append(language_element.text)
         return languages
 
