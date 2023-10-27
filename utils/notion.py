@@ -29,13 +29,17 @@ class NotionProperty(ABC):
         """
         pass
 
+
 class NotionTitle(NotionProperty):
 
-    def __init__(self, name: str, property: Dict):
-        try:
-            value = property.get(name, {}).get("title", [{}])[0].get("text", {}).get("content")
-        except BaseException:
-            value = None
+    def __init__(self, name: str, property: [Dict, str]):
+        if isinstance(property, dict):
+            try:
+                value = property.get(name, {}).get("title", [{}])[0].get("text", {}).get("content")
+            except BaseException:
+                value = None
+        else:
+            value = property
         super().__init__(name, value)
 
     def as_property(self) -> Dict:
@@ -54,11 +58,14 @@ class NotionTitle(NotionProperty):
 
 class NotionNumber(NotionProperty):
 
-    def __init__(self, name: str, property: Dict):
-        try:
-            value = property.get(name, {}).get("number")
-        except BaseException:
-            value = None
+    def __init__(self, name: str, property: [Dict, int, float]):
+        if isinstance(property, dict):
+            try:
+                value = property.get(name, {}).get("number")
+            except BaseException:
+                value = None
+        else:
+            value = property
         super().__init__(name, value)
 
     def as_property(self) -> Dict:
@@ -68,11 +75,14 @@ class NotionNumber(NotionProperty):
 
 class NotionText(NotionProperty):
 
-    def __init__(self, name: str, property: Dict):
-        try:
-            value = property.get(name, {}).get("rich_text", [{}])[0].get("text", {}).get("content")
-        except BaseException:
-            value = None
+    def __init__(self, name: str, property: [Dict, str]):
+        if isinstance(property, dict):
+            try:
+                value = property.get(name, {}).get("rich_text", [{}])[0].get("text", {}).get("content")
+            except BaseException:
+                value = None
+        else:
+            value = property
         super().__init__(name, value)
 
     def as_property(self) -> Dict:
@@ -93,11 +103,13 @@ class NotionText(NotionProperty):
 
 class NotionSelect(NotionProperty):
 
-    def __init__(self, name: str, property: Dict):
-        try:
-            value = property.get(name, {"select": {}}).get("select", {"name": None}).get("name")
-        except BaseException:
-            value = None
+    def __init__(self, name: str, property: [Dict, str]):
+        if isinstance(property, dict):
+            try:
+                value = property.get(name, {"select": {}}).get("select", {"name": None}).get("name")
+            except BaseException:
+                value = None
+            value = property
         super().__init__(name, value)
 
     def as_property(self) -> Dict:
@@ -114,11 +126,14 @@ class NotionSelect(NotionProperty):
 
 class NotionMultiSelect(NotionProperty):
 
-    def __init__(self, name: str, property: Dict):
-        try:
-            value = [element["name"] for element in property.get(name, {}).get("multi_select", [])]
-        except BaseException:
-            value = None
+    def __init__(self, name: str, property: [Dict, List[str]]):
+        if isinstance(property, dict):
+            try:
+                value = [element["name"] for element in property.get(name, {}).get("multi_select", [])]
+            except BaseException:
+                value = None
+        else:
+            value = property
         super().__init__(name, value)
 
     def as_property(self) -> Dict:
@@ -133,11 +148,14 @@ class NotionMultiSelect(NotionProperty):
 
 class NotionRelation(NotionProperty):
 
-    def __init__(self, name: str, property: Dict):
-        try:
-            value = [element["name"] for element in property.get(name, {}).get("relation", [])]
-        except BaseException:
-            value = None
+    def __init__(self, name: str, property: [Dict, List[str]]):
+        if isinstance(property, dict):
+            try:
+                value = [element["name"] for element in property.get(name, {}).get("relation", [])]
+            except BaseException:
+                value = None
+        else:
+            property = value
         super().__init__(name, value)
 
     def as_property(self) -> Dict:
@@ -152,11 +170,14 @@ class NotionRelation(NotionProperty):
 
 class NotionURL(NotionProperty):
 
-    def __init__(self, name: str, property: Dict):
-        try:
-            value = property.get(name, {}).get("url")
-        except BaseException:
-            value = None
+    def __init__(self, name: str, property: [Dict, str]):
+        if isinstance(property, dict):
+            try:
+                value = property.get(name, {}).get("url")
+            except BaseException:
+                value = None
+        else:
+            value = property
         super().__init__(name, value)
 
     def as_property(self) -> Dict:
@@ -168,11 +189,14 @@ class NotionURL(NotionProperty):
 
 class NotionExternalFile(NotionProperty):
 
-    def __init__(self, name: str, property: Dict):
-        try:
-            value = property.get(name, {}).get("files", [{}])[0].get("external", {}).get("url")
-        except BaseException:
-            value = None
+    def __init__(self, name: str, property: [Dict, str]):
+        if isinstance(property, dict):
+            try:
+                value = property.get(name, {}).get("files", [{}])[0].get("external", {}).get("url")
+            except BaseException:
+                value = None
+        else:
+            value = property
         super().__init__(name, value)
 
     def as_property(self) -> Dict:
@@ -196,17 +220,18 @@ class NotionExternalFile(NotionProperty):
 class NotionPage(ABC):
 
     def __init__(self, data):
-        self.id = data.get("id")
-        self.created_time = data.get("created_time")
-        self.last_edited_time = data.get("last_edited_time")
-        self.created_by = data.get("created_by")
-        self.last_edited_by = data.get("last_edited_by")
-        self.cover = data.get("cover")
-        self.icon = data.get("icon")
-        self.parent = data.get("parent")
-        self.archived = data.get("archived")
-        self.url = data.get("url")
-        self._properties = data.get("properties")
+        if isinstance(data, dict):
+            self.id = data.get("id")
+            self.created_time = data.get("created_time")
+            self.last_edited_time = data.get("last_edited_time")
+            self.created_by = data.get("created_by")
+            self.last_edited_by = data.get("last_edited_by")
+            self.cover = data.get("cover")
+            self.icon = data.get("icon")
+            self.parent = data.get("parent")
+            self.archived = data.get("archived")
+            self.url = data.get("url")
+            self._properties = data.get("properties")
 
     @property
     def last_update(self):
@@ -279,8 +304,7 @@ class Notion:
                 save_json(filename, {"data": results})
         return results
 
-
-    def add_record(self, database_id: str, page: NotionPage) -> None:
+    def add_record(self, database_id: str, page: NotionPage) -> str:
         """
         Save a record to a Notion database.
 
@@ -288,6 +312,9 @@ class Notion:
             database_id (str): The ID of the Notion database.
             properties (dict): A dictionary containing the record properties to be saved.
 
+
+        Returns:
+            id of newly created record
         Raises:
             InvalidRequest: If there's an error in the request.
         """
@@ -296,15 +323,15 @@ class Notion:
         response = requests.post(url, headers=self.headers, json=payload)
 
         # Check for errors in the response.
-        if response.status_code != 200:
+        if response.status_code == 200:
+            pprint(response.json())
+            return response.json()["id"]
+        else:
             message = f"Error requesting data from {url}. " \
                       f"Response-status: {response.status_code}."
             logger.error(f"Request failed with status {response.status_code}")
             pprint(response.json()["message"])
             raise InvalidRequest(url)
-        else:
-            pprint(response.json())
-
 
     def update_record(self, page: NotionPage) -> None:
         """
