@@ -5,6 +5,7 @@ import logging
 from pprint import pprint
 
 from utils.file import load_config
+from utils.genres import update_genres
 from utils.media_manager import MediaManager
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,9 @@ def main(arguments):
                         choices=movie_location_choices,
                         type=str.lower, nargs="?", const="all")
     # (1/3) Add more media handling options here to come
+
+    parser.add_argument("-g", "--genres", action="store_true",
+                        help="Update local genres")
     parser.add_argument("-d", "--debug", action="store_true",
                         help="Run in debug mode")
     parser.add_argument("-i", "--info", action="store_true",
@@ -41,6 +45,9 @@ def main(arguments):
         logging.basicConfig(level=logging.DEBUG)
     elif args.info:
         logging.basicConfig(level=logging.INFO)
+
+    if args.genres:
+        update_genres(config)
 
     app = MediaManager(config)
     if (
