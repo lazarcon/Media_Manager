@@ -109,6 +109,7 @@ class NotionSelect(NotionProperty):
                 value = property.get(name, {"select": {}}).get("select", {"name": None}).get("name")
             except BaseException:
                 value = None
+        else:
             value = property
         super().__init__(name, value)
 
@@ -155,7 +156,7 @@ class NotionRelation(NotionProperty):
             except BaseException:
                 value = None
         else:
-            property = value
+            value = property
         super().__init__(name, value)
 
     def as_property(self) -> Dict:
