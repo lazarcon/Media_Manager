@@ -325,7 +325,6 @@ class Notion:
 
         # Check for errors in the response.
         if response.status_code == 200:
-            pprint(response.json())
             return response.json()["id"]
         else:
             message = f"Error requesting data from {url}. " \
