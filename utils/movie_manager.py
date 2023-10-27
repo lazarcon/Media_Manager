@@ -94,10 +94,13 @@ class NotionMovie(NotionPage):
             self.imdb_url = NotionURL("Imdb", properties)
             self.poster_url = NotionExternalFile("Poster", properties)
         elif isinstance(data, Movie):
+            logger.debug("Got a movie for creation:")
             self.title = NotionTitle("Titel", data.title)
             self.year = NotionNumber("Jahr", data.year)
             self.tagline = NotionText("Handlung", data.tagline_text)
-            self.rating = NotionSelect("Rating", ("\u2605" * round(data.rating/2)))
+            if data.rating is not None and len(data.rating) > 0:
+                stars = "\u2605" * int(round(float(data.rating)/ 2))
+                self.rating = NotionSelect("Rating", stars)
             self.duration = NotionNumber("Dauer", data.duration)
             self.languages = NotionMultiSelect("Sprachen", [language.language_name for language in data.languages])
             self.countries = NotionMultiSelect("L\u00e4nder", [country.country_name for country in data.countries])
@@ -128,19 +131,30 @@ class NotionMovie(NotionPage):
         """
         Converts the Movie object to a dictionary
         """
-        return {
-            self.title.as_property(),
-            self.year.as_property(),
-            self.duration.as_property(),
-            self.tagline.as_property(),
-            self.rating.as_property(),
-            self.countries.as_property(),
-            self.languages.as_property(),
-            self.genres.as_property(),
-            self.imdb_url.as_property(),
-            self.poster_url.as_property(),
-            self.locations.as_property()
-        }
+        properties = {}
+        properties |= self.title.as_property()
+        if self.year.value is not None:
+            properties |= self.year.as_property()
+        if self.duration.value is not None:
+            properties |= self.duration.as_property()
+        if self.tagline.value is not None:
+            properties |= self.tagline.as_property()
+        if self.rating.value is not None:
+            properties |= self.rating.as_property()
+        if self.imdb_url.value is not None:
+            properties |= self.imdb_url.as_property()
+        if self.poster_url.value is not None:
+            properties |= self.poster_url.as_property()
+        if len(self.genres.value) > 0:
+            properties |= self.genres.as_property()
+        if len(self.countries.value) > 0:
+            properties |= self.countries.as_property()
+        if len(self.languages.value) > 0:
+            properties |= self.languages.as_property()
+        if len(self.locations.value) is not None:
+            properties |= self.locations.as_property()
+
+        return properties
 
 
 class RemoteMovieRepository(Notion):
@@ -164,7 +178,7 @@ class RemoteMovieRepository(Notion):
         return movies
 
     def remove_all_locations_from_movies(self, movie_ids: List[str]) -> None:
-        logger.info("Removing locations from movies")
+        logger.info("Removing locations from Notion movies")
         payload = {
             "Speicherorte": {
                 "type": "multi_select",
@@ -175,11 +189,10 @@ class RemoteMovieRepository(Notion):
             self.update_record(self.movie_database_id, movie_id, payload)
 
     def add_movie(self, movie: NotionMovie):
-        logger.debug(f"Adding {movie.title}")
         try:
             return self.add_record(self.movie_database_id, movie)
         except BaseException as e:
-            logger.error(f"Error creating movie \"{movie.title}\":")
+            logger.error(f"Error creating movie \"{movie}\":")
             logger.error(str(e))
 
 
@@ -331,16 +344,20 @@ class LocalMovieRepository:
         return movie
 
     def find_storage_paths_by_label(self, label: str) -> List[StoragePath]:
+        logger.debug(f"Searching for all storage paths of {label}")
         with self.session as session:
             storage_paths = session.query(StoragePath) \
                 .join(StorageLocation, StoragePath.storage_id == StorageLocation.storage_id) \
                 .filter(StorageLocation.label == label) \
                 .all()
+        logger.debug(f"Found {len(storage_paths)} movies for {label}")
         return storage_paths
 
     def delete_storage_paths(self, paths_to_delete: List[StoragePath]):
+        logger.info("Deleting storage paths")
         with self.session.begin() as transaction:
             for path in paths_to_delete:
+                logger.debug(f"Deleting {path.location_path}")
                 self.session.delete(path)
 
             transaction.commit()
@@ -373,23 +390,23 @@ class LocalMovieRepository:
         return last_update
 
     def all_movies(self) -> List[Movie]:
-        return (self.session.query(Movie)
-                .options(
-                    joinedload(Movie.languages),
-                    joinedload(Movie.directors),
-                    joinedload(Movie.actors),
-                    joinedload(Movie.genres),
-                    joinedload(Movie.countries),
-                    joinedload(Movie.paths),
-                    joinedload(Movie.paths.storage)
-                )
-                .all())
-
+        with self.session as session:
+            movies = (self.session.query(Movie)
+                    .options(
+                        joinedload(Movie.languages),
+                        joinedload(Movie.directors),
+                        joinedload(Movie.actors),
+                        joinedload(Movie.genres),
+                        joinedload(Movie.countries),
+                        joinedload(Movie.paths).joinedload(StoragePath.storage),
+                    )
+                    .all())
+        return list(movies)
 
     def update_movies(self, movies: List[Movie]) -> None:
         with self.session.begin() as transaction:
             for movie in movies:
-                transaction.add(movie)
+                self.session.add(movie)
             transaction.commit()
 
 
@@ -417,6 +434,7 @@ class MovieManager:
         Returns:
             List[str] notion_ids of deleted movies
         """
+        logger.debug("Removing missing movies")
         session = get_session()
         repository = LocalMovieRepository(session)
         missing_paths = []
@@ -424,22 +442,24 @@ class MovieManager:
         for location in locations:
             label = location.get("label")
             mount_point = location.get("mount_point")
-
             if mount_point is not None and not os.path.ismount(mount_point):
                 logger.warn(f"Skipping {label} because it is not mounted.")
                 continue
-
+            logger.debug(f"Inspecting Mountpoint: {label}")
             paths = repository.find_storage_paths_by_label(label=label)
 
             for path in paths:
                 if not os.path.exists(path.location_path):
-                    missing_paths.append(path.movie)
+                    logger.debug(f"Found missing location: {path.location_path}")
+                    missing_paths.append(path)
 
-        if len(missing_paths) > 0:
-            deleted_movie_ids = repository.delete_storage_paths(missing_paths)
-            repository.delete_movies_without_paths()
+        if len(missing_paths) == 0:
+            logger.debug("No missing movie paths found.")
+            return []
+        else:
+            repository.delete_storage_paths(missing_paths)
+            deleted_movie_ids = repository.delete_movies_without_paths()
             return deleted_movie_ids
-        return []
 
     def _add_or_update_movie(self, label: str, movie_path: str, nfo_path):
         nfo_path = NFO.rename_nfo_file(nfo_path)
@@ -561,10 +581,12 @@ class MovieManager:
 
     def _add_movies(self, local_movies = List[Movie]):
         print("Adding local movies:")
+
         for movie in local_movies:
             notion_movie = NotionMovie(movie)
-            movie.notion_id = self.remote_movies.add_movie(notion_movie)
-            print("\t", movie, f" ({movie.notion_id})")
+            print(f"Adding {notion_movie}")
+            # movie.notion_id = self.remote_movies.add_movie(notion_movie)
+            # print("\t", movie, f" ({movie.notion_id})")
 
         session = get_session()
         LocalMovieRepository(session).update_movies(local_movies)
@@ -575,7 +597,9 @@ class MovieManager:
         for movie in movies:
             notion_movie = NotionMovie(movie["local_movie"])
             notion_movie.notion_id = movie["notion_movie"].id
-            updated_movies.append(movie)
+            # self.remote_movies.update_record(notion_movie)
+            # movie.notion_id = notion_movie.notion_id
+            # updated_movies.append(movie)
             print("\t", notion_movie, f" ({notion_movie.notion_id})")
 
         session = get_session()
@@ -622,6 +646,7 @@ class MovieManager:
         # Remove Missing Movies
         removed_movie_ids = self._remove_missing_movies(locations)
         # removed_movie_ids = []
+        print(f"Deleted {len(removed_movie_ids)} movies")
 
         # Check for new movies or movie updates
         process_locations(locations, self._add_or_update_stored_movies)
