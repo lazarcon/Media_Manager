@@ -32,6 +32,7 @@ from .notion import (
     NotionExternalFile,
     Notion,
 )
+from .imdb import ImdbRepository
 
 logger = logging.getLogger(__name__)
 
@@ -93,15 +94,14 @@ class NotionMovie(NotionPage):
             self.genres = NotionRelation("Genre", properties)
             self.imdb_url = NotionURL("Imdb", properties)
             self.poster_url = NotionExternalFile("Poster", properties)
+            self.rank = NotionNumber("Rang", properties)
         elif isinstance(data, Movie):
             self.title = NotionTitle("Titel", data.title)
             self.year = NotionNumber("Jahr", data.year)
             self.tagline = NotionText("Handlung", data.tagline_text)
-            if data.rating is not None and len(data.rating) > 0:
-                if data.rating == "0.0":
-                    self.rating = None
-                else:
-                    stars = "\u2605" * int(round(float(data.rating)/ 2))
+            if data.rating is not None and data.rating > 0:
+                stars = "\u2605" * int(round(data.rating)/ 2)
+                if stars != "":
                     self.rating = NotionSelect("Rating", stars)
             else:
                 self.rating = None
@@ -112,6 +112,7 @@ class NotionMovie(NotionPage):
             self.genres = NotionRelation("Genre", [genre.notion_id for genre in data.genres if genre.notion_id is not None])
             self.imdb_url = NotionURL("Imdb", f"https://www.imdb.com/title/{data.imdb_id}/")
             self.poster_url = NotionExternalFile("Poster", data.poster_url)
+            self.rank = NotionNumber("Rang", data.rank)
 
     def __repr__(self):
         return f"{self.title.value} ({self.year.value})"
@@ -149,6 +150,8 @@ class NotionMovie(NotionPage):
             properties |= self.imdb_url.as_property()
         if self.poster_url.value is not None:
             properties |= self.poster_url.as_property()
+        if self.rank.value is not None:
+            properties |= self.rank.as_property()
         if self.genres.value is not None and len(self.genres.value) > 0:
             properties |= self.genres.as_property()
         if self.countries.value is not None and len(self.countries.value) > 0:
@@ -498,14 +501,27 @@ class MovieUpdater:
                 if local_movie.tagline_text != notion_movie.tagline.value:
                     had_changes = True
                     notion_movie.tagline.value = local_movie.tagline_text
-                if local_movie.rating is not None and local_movie.rating != "0.0":
-                    rating = "\u2605" * int(round(float(local_movie.rating)/ 2))
-                    if notion_movie.rating is None:
+                if local_movie.rating is not None and local_movie.rating != 0.0:
+                    rating = "\u2605" * int(round(local_movie.rating/ 2))
+                    if rating == "" and notion_movie.rating is not None:
+                        notion_movie.rating = None
+                        had_changes = True
+                    elif notion_movie.rating is None and rating != "":
                         notion_movie.rating = NotionSelect("Rating", rating)
                         had_changes = True
                     elif notion_movie.rating.value is None or notion_movie.rating.value != rating:
                         had_changes = True
                         notion_movie.rating.value = rating
+                if local_movie.rank is None:
+                    if notion_movie.rank.value is not None:
+                        notion_movie.rank.value = None
+                        had_changes = True
+                else:
+                    if (notion_movie.rank.value is None
+                        or notion_movie.rank.value != local_movie.rank
+                    ):
+                        notion_movie.rank.value = local_movie.rank
+                        had_changes = True
 
                 # Add more compares as necessary
                 if had_changes:
@@ -520,6 +536,25 @@ class MovieUpdater:
             print(f"Updated {changes} movies.")
             transaction.commit()
         return missing_movies
+
+    def update_imdb_movie_rankings(self):
+        imdb = ImdbRepository()
+        if imdb.is_update_due():
+            logger.info("Updating IMDB Movie rankings")
+            rankings = imdb.get_rankings()
+            with self.session.begin() as transaction:
+                for imdb_id, top_movie in rankings.items():
+                    movies = self.session.query(Movie).filter(Movie.imdb_id == imdb_id).all()
+                    for movie in movies:
+                        if movie.rank is None or movie.rank != top_movie.get("rank"):
+                            logger.debug(f"Adjusting rank of {movie} to {top_movie.get('rank')}")
+                            previous_ranked_movie = self.session.query(Movie).filter(Movie.rank == top_movie.get('rank'))
+                            if previous_ranked_movie:
+                                previous_ranked_movie.rank = None
+                            movie.rank = top_movie.get("rank")
+                transaction.commit()
+        else:
+            logger.info("Skipping update of IMDB Top 250 rankings")
 
 
 class MovieManager:
@@ -651,6 +686,11 @@ class MovieManager:
                 elif len(nfo_files) == 0 and len(movies) == 1:
                     logger.warning(f"Found no .nfo file but a movie in {folder}")
 
+    def update_imdb_rankings(self):
+        session = get_session()
+        movie_updater = MovieUpdater(session, self.notion_repository)
+        movie_updater.update_imdb_movie_rankings()
+
     def update_notion(self, removed_movie_ids: List[str] = []):
         """
         Update the Notion database with new data from the local database.
@@ -682,6 +722,9 @@ class MovieManager:
 
         # Check for new movies or movie updates
         process_locations(locations, self.add_or_update_stored_movies)
+
+        # Update imdb rankings
+        self.update_imdb_rankings()
 
         # Update the Notion database
         self.update_notion(removed_movie_ids)
