@@ -16,7 +16,7 @@ from sqlalchemy.dialects.sqlite import (
     # DATE,
     # DATETIME,
     # DECIMAL,
-    # FLOAT,
+    FLOAT,
     INTEGER,
     # NUMERIC,
     # JSON,
@@ -186,8 +186,9 @@ class Movie(Base):
     year = Column(INTEGER, nullable=True)
     poster_url = Column(VARCHAR(200))
     tagline_text = Column(VARCHAR(256))
-    rating = Column(VARCHAR(5))
+    rating = Column(FLOAT)
     duration = Column(INTEGER)
+    rank = Column(INTEGER)
 
     genres: Mapped[List[MovieGenre]] = relationship(secondary=movie_genre_association)
     countries: Mapped[List[Country]] = relationship(secondary=movie_country_association)
