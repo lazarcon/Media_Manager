@@ -94,13 +94,17 @@ class NotionMovie(NotionPage):
             self.imdb_url = NotionURL("Imdb", properties)
             self.poster_url = NotionExternalFile("Poster", properties)
         elif isinstance(data, Movie):
-            logger.debug("Got a movie for creation:")
             self.title = NotionTitle("Titel", data.title)
             self.year = NotionNumber("Jahr", data.year)
             self.tagline = NotionText("Handlung", data.tagline_text)
             if data.rating is not None and len(data.rating) > 0:
-                stars = "\u2605" * int(round(float(data.rating)/ 2))
-                self.rating = NotionSelect("Rating", stars)
+                if data.rating == "0.0":
+                    self.rating = None
+                else:
+                    stars = "\u2605" * int(round(float(data.rating)/ 2))
+                    self.rating = NotionSelect("Rating", stars)
+            else:
+                self.rating = None
             self.duration = NotionNumber("Dauer", data.duration)
             self.languages = NotionMultiSelect("Sprachen", [language.language_name for language in data.languages])
             self.countries = NotionMultiSelect("L\u00e4nder", [country.country_name for country in data.countries])
@@ -121,9 +125,9 @@ class NotionMovie(NotionPage):
     @property
     def unique_key(self):
         if self.year is None:
-            return self.title
+            return self.title.value
         elif self.year.value is None:
-            return self.title
+            return self.title.value
         else:
             return f"{self.year.value}-{self.title.value}"
 
@@ -139,25 +143,25 @@ class NotionMovie(NotionPage):
             properties |= self.duration.as_property()
         if self.tagline.value is not None:
             properties |= self.tagline.as_property()
-        if self.rating.value is not None:
+        if self.rating is not None and self.rating.value is not None:
             properties |= self.rating.as_property()
         if self.imdb_url.value is not None:
             properties |= self.imdb_url.as_property()
         if self.poster_url.value is not None:
             properties |= self.poster_url.as_property()
-        if len(self.genres.value) > 0:
+        if self.genres.value is not None and len(self.genres.value) > 0:
             properties |= self.genres.as_property()
-        if len(self.countries.value) > 0:
+        if self.countries.value is not None and len(self.countries.value) > 0:
             properties |= self.countries.as_property()
-        if len(self.languages.value) > 0:
+        if self.languages.value is not None and len(self.languages.value) > 0:
             properties |= self.languages.as_property()
-        if len(self.locations.value) is not None:
+        if self.locations.value is not None and len(self.locations.value) is not None:
             properties |= self.locations.as_property()
 
         return properties
 
 
-class RemoteMovieRepository(Notion):
+class NotionMovieRepository(Notion):
 
     def __init__(self,
                  api_key: str,
@@ -389,38 +393,144 @@ class LocalMovieRepository:
             last_update = session.query(func.max(Movie.last_update)).scalar()
         return last_update
 
-    def all_movies(self) -> List[Movie]:
-        with self.session as session:
-            movies = (self.session.query(Movie)
-                    .options(
-                        joinedload(Movie.languages),
-                        joinedload(Movie.directors),
-                        joinedload(Movie.actors),
-                        joinedload(Movie.genres),
-                        joinedload(Movie.countries),
-                        joinedload(Movie.paths).joinedload(StoragePath.storage),
-                    )
-                    .all())
-        return list(movies)
 
-    def update_movies(self, movies: List[Movie]) -> None:
+class MovieUpdater:
+    def __init__(self, session, notion_repository):
+        self.session = session
+        self.notion_repository = notion_repository
+        self.logger = logging.getLogger(__class__.__name__)
+
+    def compare_movies(self, local_movies: List[Movie], notion_movies: List[NotionMovie]):
+        """
+        Compare local movie data with Notion movie data to identify changes.
+
+        Args:
+            local_movies (list): List of movie objects from your local database.
+            notion_movies (list): List of movie objects from your Notion database.
+
+        Returns:
+            added_movies (list): Movies that are in local but not in Notion.
+            overlapping_movies (list): Movies that exist in both local and Notion.
+            missing_movies (list): Movies that are in Notion but not in local.
+        """
+        added_movies = []
+        overlapping_movies = []
+        missing_movies = []
+
+        # Create dictionaries for efficient lookups
+        local_movie_dict = {f"{movie.unique_key}": movie for movie in local_movies}
+        notion_movie_dict = {f"{movie.unique_key}": movie for movie in notion_movies}
+        # Identify added and updated movies
+        for unique_key, local_movie in local_movie_dict.items():
+            notion_movie = notion_movie_dict.get(unique_key)
+            if notion_movie is None:
+                added_movies.append(local_movie)
+            else:
+                overlapping_movies.append({"local_movie": local_movie, "notion_movie": notion_movie})
+
+        # Identify removed movies
+        for title_year, notion_movie in notion_movie_dict.items():
+            if title_year not in local_movie_dict:
+                missing_movies.append(notion_movie)
+        return added_movies, overlapping_movies, missing_movies
+
+    def _all_movies(self) -> List[Movie]:
+        """Retrieve all movies from the local database."""
+        return (self.session.query(Movie)
+                .options(
+                    joinedload(Movie.languages),
+                    joinedload(Movie.directors),
+                    joinedload(Movie.actors),
+                    joinedload(Movie.genres),
+                    joinedload(Movie.countries),
+                    joinedload(Movie.paths).joinedload(StoragePath.storage),
+                )
+                .all())
+
+    def update(self, notion_movies: List[NotionMovie]) -> List[NotionMovie]:
+        """
+        Compare local movies with Notion movies, add new movies to Notion, and update existing ones.
+
+        Args:
+            notion_movies (list): List of movie objects from your Notion database.
+            notion_repository (RemoteMovieRepository): The repository for interacting with Notion.
+            last_update (datetime.datetime, optional): A datetime filter for last updates. Defaults to None.
+
+        Returns:
+            list: Movies missing in Notion.
+        """
         with self.session.begin() as transaction:
-            for movie in movies:
-                self.session.add(movie)
+            local_movies = self._all_movies()
+            added_movies, overlapping_movies, missing_movies = self.compare_movies(local_movies, notion_movies)
+            self.logger.info(f"Adding {len(added_movies)} movies to Notion:")
+            changes = 0
+            for local_movie in added_movies:
+                notion_movie = NotionMovie(local_movie)
+                # Try to add the movie to Notion
+                try:
+                    # notion_id = self.notion_repository.add_movie(notion_movie)
+                    # local_movie.notion_id = notion_id
+                    self.logger.info(f"Added {notion_movie}")
+                    changes += 1
+                except Exception as e:
+                    self.logger.error(f"Failed to add {notion_movie}: {e}")
+            print(f"Added {changes} ")
+
+            changes = 0
+            self.logger.info(f"Updating {len(overlapping_movies)} movies in Notion, if needed:")
+            for record in overlapping_movies:
+                local_movie = record.get("local_movie")
+                notion_movie = record.get("notion_movie")
+                # Check if notion_id is set.
+                if local_movie.notion_id is None:
+                    local_movie.notion_id = notion_movie.id
+                    self.logger.debug(f"Setting missing notion id for {local_movie}.")
+                elif local_movie.notion_id != notion_movie.id:
+                    local_movie.notion_id = notion_movie.id
+                    self.logger.debug(f"Changing notion id for {local_movie}.")
+
+                had_changes = False
+                local_locations = [path.storage.label for path in local_movie.paths]
+                for local_location in local_locations:
+                    if local_location not in notion_movie.locations.value:
+                        had_changes = True
+                        notion_movie.locations.value.append(local_location)
+                if local_movie.tagline_text != notion_movie.tagline.value:
+                    had_changes = True
+                    notion_movie.tagline.value = local_movie.tagline_text
+                if local_movie.rating is not None and local_movie.rating != "0.0":
+                    rating = "\u2605" * int(round(float(local_movie.rating)/ 2))
+                    if notion_movie.rating is None:
+                        notion_movie.rating = NotionSelect("Rating", rating)
+                        had_changes = True
+                    elif notion_movie.rating.value is None or notion_movie.rating.value != rating:
+                        had_changes = True
+                        notion_movie.rating.value = rating
+
+                # Add more compares as necessary
+                if had_changes:
+                    # Try to update the record in Notion
+                    try:
+                        self.notion_repository.update_record(notion_movie)
+                        print(f"Updated {notion_movie} ({notion_movie.id})")
+                        self.logger.info(f"Updated {notion_movie} ({notion_movie.id})")
+                        changes += 1
+                    except Exception as e:
+                        self.logger.error(f"Failed to update {notion_movie}: {e}")
+            print(f"Updated {changes} movies.")
             transaction.commit()
+        return missing_movies
 
 
 class MovieManager:
-
-    def __init__(self, api_key: str,
-                movie_database_id: str,
-                omdb_api_key: str):
-        self.remote_movies = RemoteMovieRepository(
+    def __init__(self, api_key: str, movie_database_id: str, omdb_api_key: str):
+        self.notion_repository = NotionMovieRepository(
             api_key=api_key,
-            movie_database_id=movie_database_id)
-        self.posters = MoviePosterRepository(omdb_api_key)
+            movie_database_id=movie_database_id
+        )
+        self.poster_repository = MoviePosterRepository(omdb_api_key)
 
-    def _remove_missing_movies(self, locations: List[Dict]) -> List[str]:
+    def remove_missing_movies(self, locations: List[Dict]) -> List[str]:
         """
         Remove missing movies and their associations.
 
@@ -443,9 +553,9 @@ class MovieManager:
             label = location.get("label")
             mount_point = location.get("mount_point")
             if mount_point is not None and not os.path.ismount(mount_point):
-                logger.warn(f"Skipping {label} because it is not mounted.")
+                logger.warning(f"Skipping {label} because it is not mounted.")
                 continue
-            logger.debug(f"Inspecting Mountpoint: {label}")
+
             paths = repository.find_storage_paths_by_label(label=label)
 
             for path in paths:
@@ -453,15 +563,41 @@ class MovieManager:
                     logger.debug(f"Found missing location: {path.location_path}")
                     missing_paths.append(path)
 
-        if len(missing_paths) == 0:
+        if not missing_paths:
             logger.debug("No missing movie paths found.")
             return []
-        else:
-            repository.delete_storage_paths(missing_paths)
-            deleted_movie_ids = repository.delete_movies_without_paths()
-            return deleted_movie_ids
 
-    def _add_or_update_movie(self, label: str, movie_path: str, nfo_path):
+        repository.delete_storage_paths(missing_paths)
+        deleted_movie_ids = repository.delete_movies_without_paths()
+        return deleted_movie_ids
+
+    def is_movie_file(self, filename: str) -> bool:
+        """
+        Check if a file is a video file based on its MIME type.
+
+        :param filename: The name of the file.
+        :return: True if the file is a video, False otherwise.
+        """
+        mime_type, _ = mimetypes.guess_type(filename)
+
+        if mime_type:
+            return mime_type.startswith('video')
+        return False
+
+    def add_or_update_movie(self, label: str, movie_path: str, nfo_path):
+        """
+        Add or update a movie based on the provided label, movie_path, and NFO file path.
+
+        Args:
+            label (str): A label or name for the location.
+            movie_path (str): The path to the movie file.
+            nfo_path (str): The path to the NFO file associated with the movie.
+
+        This function adds the movie to the local database or updates its information if it already exists.
+
+        If the NFO file is not valid or lacks essential information, the function logs a warning and skips the movie.
+
+        """
         nfo_path = NFO.rename_nfo_file(nfo_path)
         try:
             nfo = NFO(nfo_path)
@@ -477,23 +613,9 @@ class MovieManager:
         # Add poster_url
         session = get_session()
         repository = LocalMovieRepository(session)
-        repository.add_or_update_movie(nfo, label, movie_path, self.posters)
+        repository.add_or_update_movie(nfo, label, movie_path, self.poster_repository)
 
-    def is_movie(self, filepath: str):
-        """
-        Check if a file is a video file based on its MIME type.
-
-        :param filepath: The path to the file.
-        :return: True if the file is a video, False otherwise.
-        """
-        mime_type, _ = mimetypes.guess_type(filepath)
-
-        if mime_type:
-            return mime_type.startswith('video')
-        else:
-            return False  # Handle cases where MIME type is not recognized
-
-    def _add_or_update_stored_movies(self, label: str, path: str) -> None:
+    def add_or_update_stored_movies(self, label: str, path: str) -> None:
         """
         Scan a directory for movie files and associated .nfo files and take actions based on the files found.
 
@@ -512,144 +634,54 @@ class MovieManager:
                 movies = []
                 for filename in os.listdir(folder):
                     filepath = os.path.join(folder, filename)
-                    if self.is_movie(filename):
+                    if self.is_movie_file(filename):
                         movies.append(filepath)
                     elif NFO.is_nfo_file(filepath):
                         nfo_files.append(filepath)
                 if len(movies) == 1 and len(nfo_files) == 1:
                     movie_path = movies[0]
                     nfo_path = nfo_files[0]
-                    self._add_or_update_movie(label, movie_path, nfo_path)
+                    self.add_or_update_movie(label, movie_path, nfo_path)
                 elif len(movies) > 1:
-                    logger.warn(f"More than one movie found in {folder}")
+                    logger.warning(f"More than one movie found in {folder}")
                 elif len(nfo_files) > 1:
-                    logger.warn(f"More than one .nfo file found in {folder}")
+                    logger.warning(f"More than one .nfo file found in {folder}")
                 elif len(nfo_files) == 1 and len(movies) == 0:
-                    logger.warn(f"Found .nfo file but no movie in {folder}")
+                    logger.warning(f"Found .nfo file but no movie in {folder}")
                 elif len(nfo_files) == 0 and len(movies) == 1:
-                    logger.warn(f"Found no .nfo file but a movie in {folder}")
+                    logger.warning(f"Found no .nfo file but a movie in {folder}")
 
-    def _compare_movies(self, local_movies: List[Movie], notion_movies: List[NotionMovie], last_update = None):
+    def update_notion(self, removed_movie_ids: List[str] = []):
         """
-        Compare local movie data with Notion movie data to identify changes.
-
-        Args:
-            local_movies (list): List of movie objects from your local database.
-            notion_movies (list): List of movie objects from your Notion database.
-
-        Returns:
-            added_movies (list): Movies that are in local but not in Notion.
-            updated_movies (list): Movies that exist in both local and Notion, but with differences.
-            missing_movies (list): Movies that are in Notion but not in local.
+        Update the Notion database with new data from the local database.
         """
-        added_movies = []
-        updated_movies = []
-        missing_movies = []
-
-        # Create dictionaries for efficient lookups
-        local_movie_dict = {f"{movie.unique_key})": movie for movie in local_movies}
-        notion_movie_dict = {f"{movie.unique_key})": movie for movie in notion_movies}
-
-        # Identify added and updated movies
-        for title_year, local_movie in local_movie_dict.items():
-            notion_movie = notion_movie_dict.get(title_year)
-            if notion_movie is None:
-                added_movies.append(local_movie)
-            elif (
-                last_update is None
-                and local_movie.last_update is not None
-                and local_movie.last_update > notion_movie.last_update
-            ):
-                updated_movies.append({"local_movie": local_movie, "notion_movie": notion_movie})
-            elif (
-                last_update is None
-                and local_movie.last_update is not None
-            ):
-                updated_movies.append({"local_movie": local_movie, "notion_movie": notion_movie})
-            elif (
-                last_update is not None
-                and last_update > notion_movie.last_update
-            ):
-                updated_movies.append({"local_movie": local_movie, "notion_movie": notion_movie})
-
-        # Identify removed movies
-        for title_year, notion_movie in notion_movie_dict.items():
-            if title_year not in local_movie_dict:
-                missing_movies.append(notion_movie)
-
-        return added_movies, updated_movies, missing_movies
-
-    def _add_movies(self, local_movies = List[Movie]):
-        print("Adding local movies:")
-
-        for movie in local_movies:
-            notion_movie = NotionMovie(movie)
-            print(f"Adding {notion_movie}")
-            # movie.notion_id = self.remote_movies.add_movie(notion_movie)
-            # print("\t", movie, f" ({movie.notion_id})")
-
+        self.notion_repository.remove_all_locations_from_movies(removed_movie_ids)
         session = get_session()
-        LocalMovieRepository(session).update_movies(local_movies)
-
-    def _update_movies(self, movies = List[Dict]):
-        print("Updating movies:")
-        updated_movies = []
-        for movie in movies:
-            notion_movie = NotionMovie(movie["local_movie"])
-            notion_movie.notion_id = movie["notion_movie"].id
-            # self.remote_movies.update_record(notion_movie)
-            # movie.notion_id = notion_movie.notion_id
-            # updated_movies.append(movie)
-            print("\t", notion_movie, f" ({notion_movie.notion_id})")
-
-        session = get_session()
-        LocalMovieRepository(session).update_movies(updated_movies)
-
-    def _update_notion(self, removed_movie_ids: List[str] = [], last_update = None):
-        """
-        update the notion so database with new data from the local database
-        """
-        self.remote_movies.remove_all_locations_from_movies(removed_movie_ids)
-        session = get_session()
-        local_movies = LocalMovieRepository(session).all_movies()
-        notion_movies = self.remote_movies.all_movies()
-        # Compare local data with Notion data
-        added_movies, updated_movies, missing_movies = self._compare_movies(local_movies, notion_movies, last_update)
-
-        self._add_movies(added_movies)
-        self._update_movies(updated_movies)
-        print("Wishlist:")
-        for movie in missing_movies:
-            print("\t", movie)
+        notion_movies = self.notion_repository.all_movies()
+        movie_updater = MovieUpdater(session, self.notion_repository)
+        wishlist = movie_updater.update(notion_movies)
+        print(f"Wishlist {len(wishlist)} movies:")
+        for movie in wishlist:
+            print(f"\t{movie}")
 
     def run(self, locations):
         """
-        Updates the notion.so movie database
+        Execute the movie management process.
 
-        First thing is, it should add stored movies on my local network to the notion.so database that are not already there.
+        Args:
+            locations (List[Dict]): List of dictionaries containing label and mount_point for movie locations.
 
-        Second it should correct/change Metadata for movies in the notion.so database, that are stored on my local network.
-
-        Third, for movies that are on notion.so, but not in my local network, remove locations that where searched, and leave films that have no storage location alone.
-
-        A Movie is considered Done, when it is stored in qnap, has movie.nfo file and a notion_id.
+        This function performs the following steps:
+        1. Removes missing movies that are no longer found on mounted drives.
+        2. Checks for new movies or movie updates in specified locations.
+        3. Updates the Notion database with new data from the local database.
 
         """
-        # locations = [{"label": "Wotan", "path": "/home/cola/Videos/Movies"}]
-
-        # Get the last update before we are performing actions
-        last_update = LocalMovieRepository(get_session()).get_last_movie_update()
-        # last_update = datetime.strptime("2023-10-24 12:39:15", "%Y-%m-%d %H:%M:%S")
-        # if last_update is not None:
-            # logger.info(f"Last update: {last_update}")
-
         # Remove Missing Movies
-        removed_movie_ids = self._remove_missing_movies(locations)
-        # removed_movie_ids = []
-        print(f"Deleted {len(removed_movie_ids)} movies")
+        removed_movie_ids = self.remove_missing_movies(locations)
 
         # Check for new movies or movie updates
-        process_locations(locations, self._add_or_update_stored_movies)
+        process_locations(locations, self.add_or_update_stored_movies)
 
-        # Update the notion database
-        self._update_notion(removed_movie_ids, last_update)
+        # Update the Notion database
+        self.update_notion(removed_movie_ids)
