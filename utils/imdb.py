@@ -21,7 +21,7 @@ FILE_AGE_TRESHOLD = 90
 class ImdbRepository:
 
     def __init__(self):
-        self.ranking = {}
+        self.rankings = {}
 
     def _fetch_imdb_top_250(self) -> Dict:
         result = {}
@@ -91,10 +91,13 @@ class ImdbRepository:
                 result[id] = movie
         return result
 
-    def _load_ranking(self):
-        if (not os.path.exists(MOVIE_CACHE)
+    def is_update_due(self) -> bool:
+        return (not os.path.exists(MOVIE_CACHE)
             or get_file_age_in_days(MOVIE_CACHE) > FILE_AGE_TRESHOLD
-        ):
+        )
+
+    def _load_ranking(self):
+        if self.is_update_due():
             data = self._fetch_imdb_top_250()
             save_json(MOVIE_CACHE, data)
         else:
@@ -102,7 +105,12 @@ class ImdbRepository:
         return data
 
     def get_rank(self, imdb_id) -> int:
-        if len(self.ranking) == 0:
-            self.ranking = self._load_ranking()
-        if imdb_id in list(self.ranking.keys()):
-            return self.ranking[imdb_id]['rank']
+        if len(self.rankings) == 0:
+            self.rankings = self._load_ranking()
+        if imdb_id in list(self.rankings.keys()):
+            return self.rankings[imdb_id]['rank']
+
+    def get_rankings(self) -> dict:
+        if len(self.rankings) == 0:
+            self.rankings = self._load_ranking()
+        return self.rankings
