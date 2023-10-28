@@ -356,6 +356,21 @@ class Notion:
             pprint(response.json()["message"])
             raise InvalidRequest(url)
 
+    def execute_update(self, database_id, record_id, payload):
+        url = f"https://api.notion.com/v1/pages/{record_id}"
+        payload = {"parent": {"database_id": {database_id}},
+                   "properties": payload}
+        response = requests.patch(url, headers=self.headers, json=payload)
+
+        # Check for errors in the response.
+        if response.status_code != 200:
+            message = f"Error requesting data from {url}. " \
+                      f"Response-status: {response.status_code}."
+            logger.error(f"Request failed with status {response.status_code}")
+            pprint(response.json()["message"])
+            raise InvalidRequest(url)
+
+
     def query(self, database_id: str, filter) -> List[Dict]:
         url = f"https://api.notion.com/v1/databases/{database_id}/query"
         logger.debug(f"Executing query @ {url}")
