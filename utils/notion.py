@@ -358,8 +358,12 @@ class Notion:
 
     def execute_update(self, database_id, record_id, payload):
         url = f"https://api.notion.com/v1/pages/{record_id}"
-        payload = {"parent": {"database_id": {database_id}},
-                   "properties": payload}
+        payload = {
+            "parent": {
+                "type": "database_id",
+                "database_id": database_id
+            },
+            "properties": payload}
         response = requests.patch(url, headers=self.headers, json=payload)
 
         # Check for errors in the response.

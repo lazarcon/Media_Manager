@@ -198,11 +198,11 @@ class NotionMovieRepository(Notion):
             self.execute_update(self.movie_database_id, movie_id, payload)
 
     def update_movie_locations(self, movie_id: str, locations: list[str]) -> None:
-        logger.info("Removing locations from Notion movies")
+        logger.info("Adding locations for Notion movies")
         payload = {
             "Speicherorte": {
                 "type": "multi_select",
-                "multi_select": locations
+                "multi_select":[{"name": value} for value in locations]
             }
         }
         self.execute_update(self.movie_database_id, movie_id, payload)
@@ -513,6 +513,12 @@ class MovieUpdater:
                 if local_movie.tagline_text != notion_movie.tagline.value:
                     had_changes = True
                     notion_movie.tagline.value = local_movie.tagline_text
+                if (local_movie.imdb_id is not None
+                    and (notion_movie.imdb_url is None
+                         or notion_movie.imdb_url.value != f"https://www.imdb.com/title/{local_movie.imdb_id}/")
+                    ):
+                    had_changes = True
+                    notion_movie.imdb_url.value = f"https://www.imdb.com/title/{local_movie.imdb_id}/"
                 if local_movie.rating is not None and local_movie.rating != 0.0:
                     rating = "\u2605" * int(round(local_movie.rating/ 2))
                     if rating == "" and notion_movie.rating is not None:
@@ -573,8 +579,19 @@ class MovieUpdater:
             .options(
                 joinedload(Movie.paths).joinedload(StoragePath.storage),
             )
-            .limit(1)
+            # .limit(1)
             .all())
+
+    def notion_only(self):
+        with self.session.begin() as transaction:
+            # backup_location = self.session.query(StorageLocation).filter(StorageLocation.label == "Backup").first()
+            local_movies = self.get_backup_movies()
+            movie = local_movies[0]
+            print(f"Simulating {movie}")
+            locations = [path.storage.label for path in movie.paths]
+            if "Backup" not in locations:
+                locations.append("Backup")
+                self.notion_repository.update_movie_locations(movie.notion_id, locations)
 
     def backup(self, backup_folder: str):
         with self.session.begin() as transaction:
@@ -584,18 +601,18 @@ class MovieUpdater:
                     backup_location = StorageLocation("Backup")
                     self.session.add(backup_location)
 
-                local_movies = self._all_movies()
+                local_movies = self.get_backup_movies()
 
                 for movie in local_movies:
                     locations = [path.storage.label for path in movie.paths]
-                    if "Backup" not in locations:
+                    if "Backup" not in locations and ("Wotan" in locations or "fritzNAS" in locations):
                         source_movie_path = movie.paths[0].location_path
                         source_folder, movie_file = os.path.split(source_movie_path)
                         first_letter = movie.title[0]
                         target_folder = os.path.join(backup_folder, first_letter, str(movie))
-
+                        print(f"Copying file {source_folder} to {target_folder}")
                         shutil.copytree(source_folder, target_folder)
-                        logger.info(f"Copied file {source_folder} to {target_folder}")
+                        target_folder = target_folder.replace("share/Multimedia/", "")
                         target_movie_file = os.path.join(target_folder, movie_file)
                         copied_movie_path = StoragePath(backup_location, target_movie_file)
                         movie.paths.append(copied_movie_path)
@@ -608,7 +625,7 @@ class MovieUpdater:
                 transaction.commit()
             except (shutil.Error, FileNotFoundError) as e:
                 logger.error(f"Error copying file: {e}")
-                transaction.rollback()
+                # transaction.rollback()
 
 class MovieManager:
     def __init__(self, api_key: str, movie_database_id: str, omdb_api_key: str):
@@ -758,7 +775,7 @@ class MovieManager:
             print(f"\t{movie}")
 
     def backup(self, backup_location: Dict):
-        mount_point = backup_location.get("mount_point")
+        # mount_point = backup_location.get("mount_point")
         """
         TODO Activate, when ready
         if mount_point and not os.path.ismount(mount_point):
@@ -768,6 +785,7 @@ class MovieManager:
         session = get_session()
         updater = MovieUpdater(session, self.notion_repository)
         updater.backup(backup_folder=backup_location.get("path"))
+        # updater.notion_only()
 
     def run(self, locations):
         """
