@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import datetime
 
 from typing import Dict, List, Callable
 
@@ -137,3 +138,22 @@ def process_locations(locations: List[Dict],
                 missing_function(label, path)
         else:
             logger.warning(f"Skipping drive {label} since it is not mounted.")
+
+
+def get_file_age_in_days(file_path: str) -> float:
+    """Calculates the age of a file in days.
+
+    Args:
+    file_path: The path to the file.
+
+    Returns:
+    The age of the file in days.
+    """
+
+    creation_time = os.path.getctime(file_path)
+    creation_time_datetime = datetime.datetime.fromtimestamp(creation_time)
+    current_time_datetime = datetime.datetime.today()
+    time_difference = current_time_datetime - creation_time_datetime
+    time_difference_in_seconds = time_difference.total_seconds()
+    file_age_in_days = time_difference_in_seconds / 24
+    return file_age_in_days
