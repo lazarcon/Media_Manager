@@ -31,10 +31,11 @@ def main(arguments):
     parser.add_argument("-m", "--movies",
                         choices=movie_location_choices,
                         type=str.lower, nargs="?", const="all")
-    # (1/3) Add more media handling options here to come
-
+    # (1/4) Add more media handling options here to come
     parser.add_argument("-g", "--genres", action="store_true",
                         help="Update local genres")
+    parser.add_argument("-b", "--backup", action="store_true",
+                        help="Create backups if necessary")
     parser.add_argument("-d", "--debug", action="store_true",
                         help="Run in debug mode")
     parser.add_argument("-i", "--info", action="store_true",
@@ -50,19 +51,28 @@ def main(arguments):
         update_genres(config)
 
     app = MediaManager(config)
+
+    if args.movies:
+        if "all" in args.movies:
+            locations = movie_locations
+        else:
+            locations = [movie_location for movie_location in movie_locations if movie_location["label"].lower() in args.movies]
+        app.run(movie_locations=locations)
+    # (2/4) and add more actual media handling here
+
+    if args.backup:
+        movie_backup_location = [movie_location for movie_location in movie_locations if movie_location["label"].lower() == "backup"][0]
+        # (3/4) add more backup locations here
+        app.backup(movie_backup_location=movie_backup_location)
+
     if (
-        not args.movies
-        # (2/3) and more missing media handling arguments here
+        not args.genres
+        and not args.movies
+        # (4/4) and more missing media handling arguments here
     ):
-        app.run(movie_locations=movie_locations)
-    else:
-        if args.movies:
-            if "all" in args.movies:
-                locations = movie_locations
-            else:
-                locations = [movie_location for movie_location in movie_locations if movie_location["label"].lower() in args.movies]
-            app.run(movie_locations=locations)
-        # (3/3) and add more actual media handling here
+        # if nothing is to be done, everything is to be done
+        # app.run(movie_locations=movie_locations)
+        print("Nothing to do.")
 
 
 if __name__ == "__main__":

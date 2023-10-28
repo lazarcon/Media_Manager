@@ -17,3 +17,6 @@ class MediaManager:
 
     def run(self, movie_locations: List[Dict] = []) -> None:
         self.movies_manager.run(movie_locations)
+
+    def backup(self, movie_backup_location: str):
+        self.movies_manager.backup(movie_backup_location)
