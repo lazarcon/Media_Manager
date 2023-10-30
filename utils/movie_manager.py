@@ -605,23 +605,40 @@ class MovieUpdater:
 
                 for movie in local_movies:
                     locations = [path.storage.label for path in movie.paths]
-                    if "Backup" not in locations and ("Wotan" in locations or "fritzNAS" in locations):
-                        source_movie_path = movie.paths[0].location_path
-                        source_folder, movie_file = os.path.split(source_movie_path)
-                        first_letter = movie.title[0]
-                        target_folder = os.path.join(backup_folder, first_letter, str(movie))
-                        print(f"Copying file {source_folder} to {target_folder}")
-                        shutil.copytree(source_folder, target_folder)
-                        target_folder = target_folder.replace("share/Multimedia/", "")
-                        target_movie_file = os.path.join(target_folder, movie_file)
-                        copied_movie_path = StoragePath(backup_location, target_movie_file)
-                        movie.paths.append(copied_movie_path)
-                        locations.append("Backup")
-
-                        if movie.notion_id is not None:
-                            self.notion_repository.update_movie_locations(movie.notion_id, locations)
-
-                        logger.info(f"Created backup for {movie}")
+                    if "Backup" not in locations:
+                        print(f"Backing up {movie} ...", end="")
+                        source_movie_path = None
+                        for path in movie.paths:
+                            if os.path.exists(path.location_path):
+                                source_movie_path = path.location_path
+                                source_folder, movie_file = os.path.split(source_movie_path)
+                                first_letter = movie.title[0]
+                                target_folder = os.path.join(backup_folder, first_letter, str(movie))
+                                shortend_target_folder = target_folder.replace("share/Multimedia/", "")
+                                target_movie_file = os.path.join(shortend_target_folder, movie_file)
+                                if os.path.exists(target_folder):
+                                    locations.append("Backup")
+                                    if movie.notion_id is not None:
+                                        self.notion_repository.update_movie_locations(movie.notion_id, locations)
+                                    copied_movie_path = StoragePath(backup_location, target_movie_file)
+                                    movie.paths.append(copied_movie_path)
+                                    print(" backup already exists. Corrected database entry")
+                                    break
+                                else:
+                                    shutil.copytree(source_folder, target_folder)
+                                    locations.append("Backup")
+                                    if movie.notion_id is not None:
+                                        self.notion_repository.update_movie_locations(movie.notion_id, locations)
+                                    copied_movie_path = StoragePath(backup_location, target_movie_file)
+                                    movie.paths.append(copied_movie_path)
+                                    logger.info(f"Created backup for {movie}")
+                                    print(f" Done!")
+                                    break
+                            else:
+                                print(f" not found in {path.storage.label} ", end="")
+                        print()
+                    else:
+                        print(f"{movie} already backed up.")
                 transaction.commit()
             except (shutil.Error, FileNotFoundError) as e:
                 logger.error(f"Error copying file: {e}")
