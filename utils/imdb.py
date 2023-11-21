@@ -3,6 +3,7 @@ import sys
 import time
 import logging
 import requests
+import re
 
 import pandas as pd
 
@@ -23,72 +24,57 @@ class ImdbRepository:
     def __init__(self):
         self.rankings = {}
 
+    def _find_first_blank(self, title_str: str) -> int:
+        for index in range(0, len(title_str)):
+            if title_str[index] == " ":
+                return index
+        return None
+
+
     def _fetch_imdb_top_250(self) -> Dict:
+        # driver = Chrome(service=Service(ChromeDriverManager().install()))
+        url = "https://www.imdb.com/chart/top/"
+        try:
+            # self.driver.get(url)
+            response = requests.get(url, headers = {"Accept-Language": "en-US, \
+                en;q=0.5, ", "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.182 Safari/537.36"})
+            response.raise_for_status()
+            #response = self.driver.page_source
+        # Throw warning in case of errors
+        except requests.exceptions.RequestException as e:
+            logger.error(f'\nThere was a problem:\n{e}')
+            sys.exit()
+
+        imdbSoup = bs(response.text, 'lxml')
+        movieContainers = imdbSoup.find_all('li', \
+                class_ = 'ipc-metadata-list-summary-item')
         result = {}
+        id_pattern = r"/title/(tt\d{7})/?.*"
+        title_pattern = r"(\d+)\.\s+(.+)"
+        for container in movieContainers:
+            links = container.find_all('a')
+            title_link = links[-1]
+            href = title_link["href"]
+            href_match = re.search(id_pattern, href)
+            id = href_match.group(1)
+            title_str = title_link.text
+            title_match = re.search(title_pattern, title_str)
+            rank = title_match.group(1)
+            title = title_match.group(2)
 
-        # For monitoring request frequency
-        startTime = time.time()
-        reqNum = 0
-
-        logger.info("Fetching Webpages...")
-        rank = 0
-        for i in range(1, 201 + 1, 50):
-        #for i in range(1, 50 + 1, 50):
-            url = ('https://www.imdb.com/search/title/?groups=top_250&sort=user_rating,desc&start=' \
-                + str(i) + '&ref_=adv_nxt')
-
-            # Make a get request
-            try:
-                response = requests.get(url, headers = {"Accept-Language": "en-US, \
-                    en;q=0.5"})
-                response.raise_for_status()
-            # Throw warning in case of errors
-            except requests.exceptions.RequestException as e:
-                logger.error(f'\nThere was a problem:\n{e}')
-                sys.exit()
-
-            # Pause the loop
-            time.sleep(randint(1,4))
-
-            # Monitor the request frequency
-            reqNum += 1
-            elapsedTime = time.time() - startTime
-            logger.debug(f"Request: {reqNum}; Frequency: {reqNum/elapsedTime:.6f} requests/s")
-
-            # Parse the HTML Contents
-            imdbSoup = bs(response.text, 'lxml')
-            movieContainers = imdbSoup.find_all('div', \
-                class_ = 'lister-item mode-advanced')
-
-            for container in movieContainers:
-                rank += 1
-
-                # Movie Id
-                id = container.img['data-tconst']
-
-                # Movie Name
-                title = container.h3.a.text
-
-                # Release Year
-                year = container.h3.find('span', class_ = 'lister-item-year').text
-
-                # Movie Genre
-                genre = container.p.find('span', class_ = 'genre') \
-                    .text.strip('\n').strip()
-
-                # IMDB Rating
-                rating = container.strong.text
-
-                # Create to Dict:
-                movie = {
-                    "rank": rank,
-                    "title": title,
-                    "year": year,
-                    "genre": genre,
-                    "rating": rating
-                }
-
-                result[id] = movie
+            spans = container.find_all("span", class_ = "cli-title-metadata-item")
+            year = int(spans[0].text)
+            ratings_container = container.find("div", class_ = "cli-ratings-container")
+            ratings_span = ratings_container.find("span")
+            rating = float(ratings_span["aria-label"][-3:])
+            # Create to Dict:
+            movie = {
+                "rank": rank,
+                "title": title,
+                "year": year,
+                "rating": rating
+            }
+            result[id] = movie
         return result
 
     def is_update_due(self) -> bool:
