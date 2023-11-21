@@ -339,7 +339,7 @@ class LocalMovieRepository:
         with self.session.begin() as transaction:
             movie = self.find_movie_by_title_and_year(title=nfo.title, year=nfo.year)
             if movie is None:
-                logger.info(f"Creating new movie from {nfo})")
+                logger.info(f"Creating new movie from {nfo}")
                 movie = Movie(title=nfo.title, year=nfo.year)
                 self.session.add(movie)
             if movie.duration is None:
@@ -483,8 +483,8 @@ class MovieUpdater:
                 notion_movie = NotionMovie(local_movie)
                 # Try to add the movie to Notion
                 try:
-                    # notion_id = self.notion_repository.add_movie(notion_movie)
-                    # local_movie.notion_id = notion_id
+                    notion_id = self.notion_repository.add_movie(notion_movie)
+                    local_movie.notion_id = notion_id
                     self.logger.info(f"Added {notion_movie}")
                     changes += 1
                 except Exception as e:
