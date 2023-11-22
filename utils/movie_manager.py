@@ -4,6 +4,8 @@ import requests
 import mimetypes
 import datetime
 import shutil
+import math
+import time
 
 from typing import List, Dict
 from pprint import pprint
@@ -102,9 +104,14 @@ class NotionMovie(NotionPage):
             self.year = NotionNumber("Jahr", data.year)
             self.tagline = NotionText("Handlung", data.tagline_text)
             if data.rating is not None and data.rating > 0:
-                stars = "\u2605" * int(round(data.rating)/ 2)
-                if stars != "":
-                    self.rating = NotionSelect("Rating", stars)
+                stars = math.floor(data.rating / 2) + 1
+                try:
+                    star_rating = "\u2605" * stars
+                    if star_rating != "":
+                        self.rating = NotionSelect("Rating", star_rating)
+                except BaseException as e:
+                    logger.error(f"Error assigning {stars} stars ({data.rating}) to {data.title} ({data.year})")
+                    raise e
             else:
                 self.rating = None
             self.duration = NotionNumber("Dauer", data.duration)
@@ -210,6 +217,13 @@ class NotionMovieRepository(Notion):
     def add_movie(self, movie: NotionMovie):
         try:
             return self.add_record(self.movie_database_id, movie)
+        except BaseException as e:
+            logger.error(f"Error creating movie \"{movie}\":")
+            logger.error(str(e))
+
+    def update_movie(self, movie: NotionMovie):
+        try:
+            self.execute_update(self.movie_database_id, movie.id, movie.get_properties())
         except BaseException as e:
             logger.error(f"Error creating movie \"{movie}\":")
             logger.error(str(e))
@@ -409,6 +423,37 @@ class LocalMovieRepository:
         return last_update
 
 
+    def add_missing_top_movies(self, top_250) -> Dict:
+        with self.session.begin() as transaction:
+            for imdb_id, top_movie in top_250.items():
+                movies = self.session.query(Movie).filter(Movie.imdb_id == imdb_id).all()
+                if len(movies) == 0:
+                    movie = Movie(top_movie.get("title"), top_movie.get("year"))
+                    movie.rating = top_movie.get("rating")
+                    movie.rank = top_movie.get("rank")
+                    movie.imdb_id = imdb_id
+                    self.session.add(movie)
+                    logger.debug(f"Added {movie} to local database.")
+            transaction.commit()
+
+    def update_top_250(self, top_250):
+        with self.session.begin() as transaction:
+            current_top_250 = self.session.query(Movie).filter(Movie.rank != None).all()
+            for current_top in current_top_250:
+                if current_top.imdb_id not in list(top_250.keys()):
+                    current_top.rank = None
+                    logger.info(f"Changing rank of {current_top}: {current_top.rank} -> None")
+                else:
+                    top_250_movie = top_250.get(current_top.imdb_id)
+                    top_250_movie_rank = int(top_250_movie.get("rank"))
+                    if int(current_top.rank) == top_250_movie_rank:
+                        logger.info(f"rank of {current_top} unchanged ({top_250_movie_rank})")
+                    else:
+                        logger.info(f"Changing rank of {current_top}: {current_top.rank} -> {top_250_movie_rank}")
+                        current_top.rank = top_250_movie_rank
+            transaction.commit()
+
+
 class MovieUpdater:
     def __init__(self, session, notion_repository):
         self.session = session
@@ -462,6 +507,45 @@ class MovieUpdater:
                 )
                 .all())
 
+    def add_notion_movie(self, local_movie):
+        notion_movie = NotionMovie(local_movie)
+        # Try to add the movie to Notion
+        try:
+            notion_id = self.notion_repository.add_movie(notion_movie)
+            local_movie.notion_id = notion_id
+            self.logger.info(f"Added {notion_movie}")
+        except Exception as e:
+            self.logger.error(f"Failed to add {notion_movie}: {e}")
+
+
+    def update_imdb(self):
+        imdb = ImdbRepository()
+        with self.session.begin() as transaction:
+            local_movies = self._all_movies()
+            for local_movie in local_movies:
+                if local_movie.notion_id is None:
+                    self.add_notion_movie(local_movie)
+                elif local_movie.imdb_id is None:
+                    local_movie.rating = None
+                else:
+                    time.sleep(2)
+                    rating = imdb.get_rating(local_movie.imdb_id)
+                    if local_movie.rating == rating:
+                        logger.info(f"Skipping {local_movie}, rating unchanged.")
+                    else:
+                        previous_rating = local_movie.rating
+                        if rating is None:
+                            local_movie.rating = None
+                        else:
+                            local_movie.rating = rating
+                        notion_movie = NotionMovie(local_movie)
+                        self.notion_repository.update_movie(notion_movie)
+                        if notion_movie.rating is None:
+                            logger.info(f"Did update {notion_movie}: {previous_rating} -> None")
+                        else:
+                            logger.info(f"Did update {notion_movie}: {previous_rating} -> {rating} ({notion_movie.rating.value})")
+            transaction.commit()
+
     def update(self, notion_movies: List[NotionMovie]) -> List[NotionMovie]:
         """
         Compare local movies with Notion movies, add new movies to Notion, and update existing ones.
@@ -480,15 +564,8 @@ class MovieUpdater:
             self.logger.info(f"Adding {len(added_movies)} movies to Notion:")
             changes = 0
             for local_movie in added_movies:
-                notion_movie = NotionMovie(local_movie)
-                # Try to add the movie to Notion
-                try:
-                    notion_id = self.notion_repository.add_movie(notion_movie)
-                    local_movie.notion_id = notion_id
-                    self.logger.info(f"Added {notion_movie}")
-                    changes += 1
-                except Exception as e:
-                    self.logger.error(f"Failed to add {notion_movie}: {e}")
+                self.add_notion_movie(local_movie)
+                changes += 1
             print(f"Added {changes} ")
 
             changes = 0
@@ -520,7 +597,7 @@ class MovieUpdater:
                     had_changes = True
                     notion_movie.imdb_url.value = f"https://www.imdb.com/title/{local_movie.imdb_id}/"
                 if local_movie.rating is not None and local_movie.rating != 0.0:
-                    rating = "\u2605" * int(round(local_movie.rating/ 2))
+                    rating = "\u2605" * math.floor(local_movie.rating / 2) + 1
                     if rating == "" and notion_movie.rating is not None:
                         notion_movie.rating = None
                         had_changes = True
@@ -565,7 +642,7 @@ class MovieUpdater:
                     movies = self.session.query(Movie).filter(Movie.imdb_id == imdb_id).all()
                     for movie in movies:
                         if movie.rank is None or movie.rank != top_movie.get("rank"):
-                            logger.debug(f"Adjusting rank of {movie} to {top_movie.get('rank')}")
+                            logger.debug(f"Adjusting rank of \"{movie}\": {movie.rank} -> {top_movie.get('rank')}")
                             previous_ranked_movie = self.session.query(Movie).filter(Movie.rank == top_movie.get('rank'))
                             if previous_ranked_movie:
                                 previous_ranked_movie.rank = None
@@ -823,8 +900,20 @@ class MovieManager:
         # Check for new movies or movie updates
         process_locations(locations, self.add_or_update_stored_movies)
 
-        # Update imdb rankings
-        self.update_imdb_rankings()
-
         # Update the Notion database
         self.update_notion(removed_movie_ids)
+
+    def update(self):
+        """
+        Updated whishlist
+        """
+        # Update imdb rankings
+        # self.update_imdb_rankings()
+        imdb = ImdbRepository()
+        top250 = imdb.get_rankings()
+        session = get_session()
+        movie_repository = LocalMovieRepository(session)
+        movie_repository.add_missing_top_movies(top250)
+        movie_repository.update_top_250(top250)
+        movie_updater = MovieUpdater(session, self.notion_repository)
+        movie_updater.update_imdb()
