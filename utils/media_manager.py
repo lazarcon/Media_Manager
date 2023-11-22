@@ -20,3 +20,6 @@ class MediaManager:
 
     def backup(self, movie_backup_location: str):
         self.movies_manager.backup(movie_backup_location)
+
+    def update(self):
+        self.movies_manager.update()
