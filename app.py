@@ -30,8 +30,11 @@ def main(arguments):
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-m", "--movies",
                         choices=movie_location_choices,
+                        help="Run all movie manager tasks",
                         type=str.lower, nargs="?", const="all")
     # (1/4) Add more media handling options here to come
+    parser.add_argument("-u", "--update", action="store_true",
+                        help="Update whishlists")
     parser.add_argument("-g", "--genres", action="store_true",
                         help="Update local genres")
     parser.add_argument("-b", "--backup", action="store_true",
@@ -51,6 +54,9 @@ def main(arguments):
         update_genres(config)
 
     app = MediaManager(config)
+
+    if args.update:
+        app.update()
 
     if args.movies:
         if "all" in args.movies:
