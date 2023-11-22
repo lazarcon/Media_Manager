@@ -24,16 +24,7 @@ class ImdbRepository:
     def __init__(self):
         self.rankings = {}
 
-    def _find_first_blank(self, title_str: str) -> int:
-        for index in range(0, len(title_str)):
-            if title_str[index] == " ":
-                return index
-        return None
-
-
-    def _fetch_imdb_top_250(self) -> Dict:
-        # driver = Chrome(service=Service(ChromeDriverManager().install()))
-        url = "https://www.imdb.com/chart/top/"
+    def _get_response(self, url):
         try:
             # self.driver.get(url)
             response = requests.get(url, headers = {"Accept-Language": "en-US, \
@@ -44,7 +35,12 @@ class ImdbRepository:
         except requests.exceptions.RequestException as e:
             logger.error(f'\nThere was a problem:\n{e}')
             sys.exit()
+        return response
 
+    def _fetch_imdb_top_250(self) -> Dict:
+        # driver = Chrome(service=Service(ChromeDriverManager().install()))
+        url = "https://www.imdb.com/chart/top/"
+        response = self._get_response(url)
         imdbSoup = bs(response.text, 'lxml')
         movieContainers = imdbSoup.find_all('li', \
                 class_ = 'ipc-metadata-list-summary-item')
@@ -100,3 +96,18 @@ class ImdbRepository:
         if len(self.rankings) == 0:
             self.rankings = self._load_ranking()
         return self.rankings
+
+    def get_rating(self, imdb_id) -> float:
+        url = f"https://www.imdb.com/title/{imdb_id}/?ref_=chttp_t_5"
+        response = self._get_response(url)
+        imdbSoup = bs(response.text, 'lxml')
+        ratings = imdbSoup.find_all("div", {"data-testid": "hero-rating-bar__aggregate-rating__score"})
+        if len(ratings) > 0:
+            spans = ratings[0].find_all("span")
+            if len(spans) > 0:
+                rating = spans[0].text
+                try:
+                    rating = float(rating)
+                    return rating
+                except BaseException as e:
+                    logger.error(f"Could not convert {rating} to float: ({str(e)})")
